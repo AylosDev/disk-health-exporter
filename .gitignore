@@ -1,0 +1,18 @@
+# IDE
+.idea/
+.vscode/
+
+# output
+dist/
+build/
+tmp/
+
+# logs
+logs/
+*.log
+# coverage
+coverage/
+.coverage
+
+# virtual environments
+.env
