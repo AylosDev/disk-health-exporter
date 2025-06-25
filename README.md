@@ -4,24 +4,73 @@ This is a custom Prometheus exporter that monitors disk health on Ubuntu servers
 
 ## Features
 
-- **RAID Array Monitoring**: Uses MegaCLI to monitor RAID arrays and physical disks
-- **Regular Disk Monitoring**: Uses smartctl for non-RAID disks
-- **Health Status**: Reports disk health status with appropriate severity levels
-- **Temperature Monitoring**: Collects disk temperature data when available
+- **Multi-Tool RAID Monitoring**: Uses MegaCLI, StorCLI, Arcconf, and mdadm to monitor both hardware and software RAID arrays
+- **Comprehensive Disk Monitoring**: Uses smartctl, NVMe CLI, hdparm, and lsblk for complete disk information
+- **Enhanced Health Metrics**: Reports detailed disk health with comprehensive SMART data
+- **Advanced Temperature Monitoring**: Collects current, minimum, and maximum temperature data
+- **Wear Leveling Tracking**: Monitors SSD and NVMe wear leveling and percentage used
+- **Error Tracking**: Comprehensive error metrics including reallocated sectors, pending sectors, and media errors
+- **Multi-Interface Support**: Supports SATA, NVMe, SAS, and other interfaces
+- **Software RAID Support**: Complete mdadm software RAID monitoring with sync progress
+- **Tool Detection**: Automatically detects and reports available monitoring tools
 - **Read-Only Operation**: Only reads system information, never modifies anything
 
 ## Metrics Exported
 
 ### Disk Health Metrics
 
-- `disk_health_status`: Disk health status with labels: device, type, serial, model, location
-- `disk_temperature_celsius`: Disk temperature in Celsius with labels: device, serial, model
+- `disk_health_status`: Disk health status with labels: device, type, serial, model, location, interface
+- `disk_temperature_celsius`: Current disk temperature in Celsius with labels: device, serial, model, interface
+- `disk_temperature_max_celsius`: Maximum recorded disk temperature in Celsius
+- `disk_temperature_min_celsius`: Minimum recorded disk temperature in Celsius
+- `disk_capacity_bytes`: Disk capacity in bytes with labels: device, serial, model, interface
+- `disk_power_on_hours_total`: Total power-on hours for the disk
+- `disk_power_cycles_total`: Total number of power cycles
+- `disk_smart_enabled`: Whether SMART is enabled (1=enabled, 0=disabled)
+- `disk_smart_healthy`: SMART overall health assessment (1=healthy, 0=unhealthy)
+
+### Disk Error Metrics
+
 - `disk_sector_errors_total`: Total number of disk sector errors with labels: device, serial, model, error_type
-- `disk_power_on_hours_total`: Total power-on hours for the disk with labels: device, serial, model
+- `disk_reallocated_sectors_total`: Total number of reallocated sectors
+- `disk_pending_sectors_total`: Total number of pending sectors
+- `disk_uncorrectable_errors_total`: Total number of uncorrectable errors
+- `disk_media_errors_total`: Total number of media errors (NVMe)
+- `disk_error_log_entries_total`: Total number of error log entries
 
-### RAID Metrics
+### Disk I/O Metrics
 
-- `raid_array_status`: RAID array status with labels: array_id, raid_level, state
+- `disk_data_units_written_total`: Total data units written
+- `disk_data_units_read_total`: Total data units read
+
+### SSD/NVMe Specific Metrics
+
+- `disk_wear_leveling_percentage`: SSD wear leveling percentage (0-100)
+- `disk_percentage_used`: NVMe percentage used (0-100)
+- `disk_available_spare_percentage`: NVMe available spare percentage
+- `disk_critical_warning`: NVMe critical warning flags
+
+### Hardware RAID Metrics
+
+- `raid_array_status`: RAID array status with labels: array_id, raid_level, state, type, controller
+- `raid_array_size_bytes`: RAID array size in bytes
+- `raid_array_used_size_bytes`: RAID array used size in bytes
+- `raid_array_drives_total`: Total number of drives in RAID array
+- `raid_array_active_drives`: Number of active drives in RAID array
+- `raid_array_spare_drives`: Number of spare drives in RAID array
+- `raid_array_failed_drives`: Number of failed drives in RAID array
+- `raid_array_rebuild_progress_percentage`: RAID array rebuild progress (0-100)
+- `raid_array_scrub_progress_percentage`: RAID array scrub progress (0-100)
+
+### Software RAID Metrics
+
+- `software_raid_array_status`: Software RAID array status with labels: device, level, state
+- `software_raid_sync_progress_percentage`: Software RAID sync progress (0-100)
+- `software_raid_array_size_bytes`: Software RAID array size in bytes
+
+### Tool Availability Metrics
+
+- `disk_monitoring_tool_available`: Whether a disk monitoring tool is available with labels: tool, version
 
 ### Exporter Metrics
 
@@ -56,17 +105,39 @@ This exporter supports multiple platforms:
 #### For Linux (RAID + Regular disks)
 
 ```bash
-# Install MegaCLI
+# Install hardware RAID management tools (choose based on your hardware)
+
+# For LSI/Broadcom/Dell RAID controllers:
 sudo apt-get update
 sudo apt-get install megacli
+
+# For newer Broadcom controllers:
+sudo apt-get install storcli
+
+# For Adaptec RAID controllers:
+sudo apt-get install arcconf
+
+# For software RAID (mdadm):
+sudo apt-get install mdadm
+
+# For ZFS RAID:
+sudo apt-get install zfsutils-linux
 ```
 
-### For regular disk monitoring
+### For comprehensive disk monitoring
 
 ```bash
-# Install smartmontools
+# Essential tools
 sudo apt-get update
-sudo apt-get install smartmontools
+sudo apt-get install smartmontools  # SMART monitoring
+sudo apt-get install util-linux     # lsblk and other utilities
+sudo apt-get install hdparm         # ATA/IDE disk parameter utility
+
+# For NVMe-specific monitoring:
+sudo apt-get install nvme-cli
+
+# For macOS (using Homebrew):
+brew install smartmontools
 ```
 
 ## Project Structure
@@ -158,19 +229,52 @@ scrape_configs:
 
 ## Example Metrics Output
 
-```
+```prometheus
 # HELP disk_health_status Disk health status (0=unknown, 1=ok, 2=warning, 3=critical)
 # TYPE disk_health_status gauge
-disk_health_status{device="/dev/sda",type="regular",serial="WD-12345",model="WD Blue",location=""} 1
-disk_health_status{device="0",type="raid",serial="",model="SEAGATE ST1000",location="Enc:32 Slot:0"} 1
+disk_health_status{device="/dev/sda",type="regular",serial="WD-12345",model="WD Blue",location="",interface="SATA"} 1
+disk_health_status{device="0",type="raid",serial="",model="SEAGATE ST1000",location="Enc:32 Slot:0",interface="SAS"} 1
 
 # HELP disk_temperature_celsius Disk temperature in Celsius
 # TYPE disk_temperature_celsius gauge
-disk_temperature_celsius{device="/dev/sda",serial="WD-12345",model="WD Blue"} 35
+disk_temperature_celsius{device="/dev/sda",serial="WD-12345",model="WD Blue",interface="SATA"} 35
+disk_temperature_celsius{device="/dev/nvme0n1",serial="NVME-67890",model="Samsung SSD 980 PRO",interface="NVMe"} 42
+
+# HELP disk_capacity_bytes Disk capacity in bytes
+# TYPE disk_capacity_bytes gauge
+disk_capacity_bytes{device="/dev/sda",serial="WD-12345",model="WD Blue",interface="SATA"} 1000204886016
+disk_capacity_bytes{device="/dev/nvme0n1",serial="NVME-67890",model="Samsung SSD 980 PRO",interface="NVMe"} 1000204886016
+
+# HELP disk_power_on_hours_total Total power-on hours for the disk
+# TYPE disk_power_on_hours_total gauge
+disk_power_on_hours_total{device="/dev/sda",serial="WD-12345",model="WD Blue"} 8760
+disk_power_on_hours_total{device="/dev/nvme0n1",serial="NVME-67890",model="Samsung SSD 980 PRO"} 4380
+
+# HELP disk_reallocated_sectors_total Total number of reallocated sectors
+# TYPE disk_reallocated_sectors_total gauge
+disk_reallocated_sectors_total{device="/dev/sda",serial="WD-12345",model="WD Blue"} 0
+
+# HELP disk_percentage_used NVMe percentage used (0-100)
+# TYPE disk_percentage_used gauge
+disk_percentage_used{device="/dev/nvme0n1",serial="NVME-67890",model="Samsung SSD 980 PRO"} 15
+
+# HELP disk_available_spare_percentage NVMe available spare percentage
+# TYPE disk_available_spare_percentage gauge
+disk_available_spare_percentage{device="/dev/nvme0n1",serial="NVME-67890",model="Samsung SSD 980 PRO"} 100
 
 # HELP raid_array_status RAID array status (0=unknown, 1=ok, 2=degraded, 3=failed)
 # TYPE raid_array_status gauge
-raid_array_status{array_id="0",raid_level="Primary-1, Secondary-0, RAID Level Qualifier-0",state="Optimal"} 1
+raid_array_status{array_id="0",raid_level="Primary-1, Secondary-0, RAID Level Qualifier-0",state="Optimal",type="hardware",controller="MegaCLI"} 1
+
+# HELP software_raid_array_status Software RAID array status (0=unknown, 1=clean, 2=degraded, 3=failed)
+# TYPE software_raid_array_status gauge
+software_raid_array_status{device="/dev/md0",level="raid1",state="clean"} 1
+
+# HELP disk_monitoring_tool_available Whether a disk monitoring tool is available (1=available, 0=not available)
+# TYPE disk_monitoring_tool_available gauge
+disk_monitoring_tool_available{tool="smartctl",version="smartmontools 7.2"} 1
+disk_monitoring_tool_available{tool="megacli",version="MegaCLI SAS RAID Management Tool Ver 8.07.14"} 1
+disk_monitoring_tool_available{tool="mdadm",version="unknown"} 1
 ```
 
 ## Security Considerations

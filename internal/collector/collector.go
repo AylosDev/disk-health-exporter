@@ -50,6 +50,9 @@ func (c *Collector) updateMetrics() {
 	// Clear previous metrics
 	c.metrics.Reset()
 
+	// Update tool availability metrics
+	c.updateToolMetrics()
+
 	// Detect operating system
 	osType := runtime.GOOS
 	log.Printf("Detected OS: %s", osType)
@@ -64,17 +67,113 @@ func (c *Collector) updateMetrics() {
 	}
 }
 
+// updateToolMetrics updates metrics about available tools
+func (c *Collector) updateToolMetrics() {
+	toolInfo := c.diskManager.GetToolInfo()
+
+	// Update tool availability metrics
+	c.metrics.ToolAvailable.WithLabelValues("smartctl", toolInfo.SmartCtlVersion).Set(boolToFloat(toolInfo.SmartCtl))
+	c.metrics.ToolAvailable.WithLabelValues("megacli", toolInfo.MegaCLIVersion).Set(boolToFloat(toolInfo.MegaCLI))
+	c.metrics.ToolAvailable.WithLabelValues("mdadm", "unknown").Set(boolToFloat(toolInfo.Mdadm))
+	c.metrics.ToolAvailable.WithLabelValues("arcconf", "unknown").Set(boolToFloat(toolInfo.Arcconf))
+	c.metrics.ToolAvailable.WithLabelValues("storcli", "unknown").Set(boolToFloat(toolInfo.Storcli))
+	c.metrics.ToolAvailable.WithLabelValues("zpool", "unknown").Set(boolToFloat(toolInfo.Zpool))
+	c.metrics.ToolAvailable.WithLabelValues("diskutil", "unknown").Set(boolToFloat(toolInfo.Diskutil))
+	c.metrics.ToolAvailable.WithLabelValues("nvme", "unknown").Set(boolToFloat(toolInfo.Nvme))
+	c.metrics.ToolAvailable.WithLabelValues("hdparm", "unknown").Set(boolToFloat(toolInfo.Hdparm))
+	c.metrics.ToolAvailable.WithLabelValues("lsblk", "unknown").Set(boolToFloat(toolInfo.Lsblk))
+}
+
+// boolToFloat converts boolean to float64 for metrics
+func boolToFloat(b bool) float64 {
+	if b {
+		return 1.0
+	}
+	return 0.0
+}
+
 // collectLinuxMetrics collects metrics on Linux systems
 func (c *Collector) collectLinuxMetrics() {
 	disks, raidArrays := c.diskManager.GetLinuxDisks()
 
-	// Update RAID array metrics
+	// Update RAID array metrics with comprehensive data
 	for _, raid := range raidArrays {
-		c.metrics.RaidArrayStatus.WithLabelValues(raid.ArrayID, raid.RaidLevel, raid.State).Set(float64(raid.Status))
+		c.metrics.RaidArrayStatus.WithLabelValues(
+			raid.ArrayID,
+			raid.RaidLevel,
+			raid.State,
+			raid.Type,
+			raid.Controller,
+		).Set(float64(raid.Status))
+
+		// Additional RAID metrics
+		if raid.Size > 0 {
+			c.metrics.RaidArraySize.WithLabelValues(
+				raid.ArrayID,
+				raid.RaidLevel,
+				raid.Type,
+			).Set(float64(raid.Size))
+		}
+
+		if raid.UsedSize > 0 {
+			c.metrics.RaidArrayUsedSize.WithLabelValues(
+				raid.ArrayID,
+				raid.RaidLevel,
+				raid.Type,
+			).Set(float64(raid.UsedSize))
+		}
+
+		if raid.NumDrives > 0 {
+			c.metrics.RaidArrayNumDrives.WithLabelValues(
+				raid.ArrayID,
+				raid.RaidLevel,
+				raid.Type,
+			).Set(float64(raid.NumDrives))
+		}
+
+		if raid.NumActiveDrives > 0 {
+			c.metrics.RaidArrayNumActiveDrives.WithLabelValues(
+				raid.ArrayID,
+				raid.RaidLevel,
+				raid.Type,
+			).Set(float64(raid.NumActiveDrives))
+		}
+
+		if raid.NumSpareDrives > 0 {
+			c.metrics.RaidArrayNumSpareDrives.WithLabelValues(
+				raid.ArrayID,
+				raid.RaidLevel,
+				raid.Type,
+			).Set(float64(raid.NumSpareDrives))
+		}
+
+		if raid.NumFailedDrives > 0 {
+			c.metrics.RaidArrayNumFailedDrives.WithLabelValues(
+				raid.ArrayID,
+				raid.RaidLevel,
+				raid.Type,
+			).Set(float64(raid.NumFailedDrives))
+		}
+
+		if raid.RebuildProgress > 0 {
+			c.metrics.RaidArrayRebuildProgress.WithLabelValues(
+				raid.ArrayID,
+				raid.RaidLevel,
+				raid.Type,
+			).Set(float64(raid.RebuildProgress))
+		}
+
+		if raid.ScrubProgress > 0 {
+			c.metrics.RaidArrayScrubProgress.WithLabelValues(
+				raid.ArrayID,
+				raid.RaidLevel,
+				raid.Type,
+			).Set(float64(raid.ScrubProgress))
+		}
 	}
 
-	// Update disk metrics
-	c.updateDiskMetrics(disks)
+	// Update comprehensive disk metrics
+	c.updateComprehensiveDiskMetrics(disks)
 
 	log.Printf("Updated metrics for %d disks and %d RAID arrays", len(disks), len(raidArrays))
 }
@@ -82,7 +181,7 @@ func (c *Collector) collectLinuxMetrics() {
 // collectMacOSMetrics collects metrics on macOS systems
 func (c *Collector) collectMacOSMetrics() {
 	disks := c.diskManager.GetMacOSDisks()
-	c.updateDiskMetrics(disks)
+	c.updateComprehensiveDiskMetrics(disks)
 
 	log.Printf("Updated metrics for %d macOS disks", len(disks))
 }
@@ -93,47 +192,210 @@ func (c *Collector) collectFallbackMetrics() {
 
 	// Try to get regular disks as fallback
 	disks, _ := c.diskManager.GetLinuxDisks()
-	c.updateDiskMetrics(disks)
+	c.updateComprehensiveDiskMetrics(disks)
 
 	log.Printf("Updated metrics for %d disks (fallback mode)", len(disks))
 }
 
-// updateDiskMetrics updates metrics for a list of disks
+// updateDiskMetrics updates metrics for a list of disks (legacy method)
 func (c *Collector) updateDiskMetrics(disks []types.DiskInfo) {
+	c.updateComprehensiveDiskMetrics(disks)
+}
+
+// updateComprehensiveDiskMetrics updates comprehensive metrics for a list of disks
+func (c *Collector) updateComprehensiveDiskMetrics(disks []types.DiskInfo) {
 	for _, disk := range disks {
 		// Convert health status to numeric value
 		status := getHealthStatusValue(disk.Health)
 
-		// Update health status metric
+		// Basic health status metric with enhanced labels
 		c.metrics.DiskHealthStatus.WithLabelValues(
 			disk.Device,
 			disk.Type,
 			disk.Serial,
 			disk.Model,
 			disk.Location,
+			disk.Interface,
 		).Set(float64(status))
 
-		// Update temperature metric only if available
+		// Temperature metrics
 		if disk.Temperature > 0 {
 			c.metrics.DiskTemperature.WithLabelValues(
 				disk.Device,
 				disk.Serial,
 				disk.Model,
+				disk.Interface,
 			).Set(disk.Temperature)
 		}
 
-		// Set sector errors to 0 when no SMART data is available
-		// In production, this should only be set when we have actual error data
-		c.metrics.DiskSectorErrors.WithLabelValues(
+		if disk.DriveTemperatureMax > 0 {
+			c.metrics.DiskTemperatureMax.WithLabelValues(
+				disk.Device,
+				disk.Serial,
+				disk.Model,
+			).Set(disk.DriveTemperatureMax)
+		}
+
+		if disk.DriveTemperatureMin > 0 {
+			c.metrics.DiskTemperatureMin.WithLabelValues(
+				disk.Device,
+				disk.Serial,
+				disk.Model,
+			).Set(disk.DriveTemperatureMin)
+		}
+
+		// Power and lifecycle metrics
+		if disk.PowerOnHours > 0 {
+			c.metrics.DiskPowerOnHours.WithLabelValues(
+				disk.Device,
+				disk.Serial,
+				disk.Model,
+			).Set(float64(disk.PowerOnHours))
+		}
+
+		if disk.PowerCycles > 0 {
+			c.metrics.DiskPowerCycles.WithLabelValues(
+				disk.Device,
+				disk.Serial,
+				disk.Model,
+			).Set(float64(disk.PowerCycles))
+		}
+
+		// Capacity and usage metrics
+		if disk.Capacity > 0 {
+			c.metrics.DiskCapacityBytes.WithLabelValues(
+				disk.Device,
+				disk.Serial,
+				disk.Model,
+				disk.Interface,
+			).Set(float64(disk.Capacity))
+		}
+
+		// Error metrics
+		if disk.ReallocatedSectors >= 0 {
+			c.metrics.DiskReallocatedSectors.WithLabelValues(
+				disk.Device,
+				disk.Serial,
+				disk.Model,
+			).Set(float64(disk.ReallocatedSectors))
+
+			// Also update legacy sector errors metric
+			c.metrics.DiskSectorErrors.WithLabelValues(
+				disk.Device,
+				disk.Serial,
+				disk.Model,
+				"reallocated_sectors",
+			).Set(float64(disk.ReallocatedSectors))
+		}
+
+		if disk.PendingSectors > 0 {
+			c.metrics.DiskPendingSectors.WithLabelValues(
+				disk.Device,
+				disk.Serial,
+				disk.Model,
+			).Set(float64(disk.PendingSectors))
+
+			c.metrics.DiskSectorErrors.WithLabelValues(
+				disk.Device,
+				disk.Serial,
+				disk.Model,
+				"pending_sectors",
+			).Set(float64(disk.PendingSectors))
+		}
+
+		if disk.UncorrectableErrors > 0 {
+			c.metrics.DiskUncorrectableErrors.WithLabelValues(
+				disk.Device,
+				disk.Serial,
+				disk.Model,
+			).Set(float64(disk.UncorrectableErrors))
+
+			c.metrics.DiskSectorErrors.WithLabelValues(
+				disk.Device,
+				disk.Serial,
+				disk.Model,
+				"uncorrectable_errors",
+			).Set(float64(disk.UncorrectableErrors))
+		}
+
+		// I/O metrics
+		if disk.TotalLBAsWritten > 0 {
+			c.metrics.DiskDataUnitsWritten.WithLabelValues(
+				disk.Device,
+				disk.Serial,
+				disk.Model,
+			).Set(float64(disk.TotalLBAsWritten))
+		}
+
+		if disk.TotalLBAsRead > 0 {
+			c.metrics.DiskDataUnitsRead.WithLabelValues(
+				disk.Device,
+				disk.Serial,
+				disk.Model,
+			).Set(float64(disk.TotalLBAsRead))
+		}
+
+		// SMART status metrics
+		c.metrics.DiskSmartEnabled.WithLabelValues(
 			disk.Device,
 			disk.Serial,
 			disk.Model,
-			"reallocated_sectors",
-		).Set(0)
+		).Set(boolToFloat(disk.SmartEnabled))
 
-		// Power-on hours metric is available but not populated from current disk detection
-		// It would need to be added to the DiskInfo struct and populated from SMART data
-		// For now, we don't set this metric unless we have actual data
+		c.metrics.DiskSmartHealthy.WithLabelValues(
+			disk.Device,
+			disk.Serial,
+			disk.Model,
+		).Set(boolToFloat(disk.SmartHealthy))
+
+		// SSD/NVMe specific metrics
+		if disk.WearLeveling > 0 {
+			c.metrics.DiskWearLeveling.WithLabelValues(
+				disk.Device,
+				disk.Serial,
+				disk.Model,
+			).Set(float64(disk.WearLeveling))
+		}
+
+		if disk.PercentageUsed > 0 {
+			c.metrics.DiskPercentageUsed.WithLabelValues(
+				disk.Device,
+				disk.Serial,
+				disk.Model,
+			).Set(float64(disk.PercentageUsed))
+		}
+
+		if disk.AvailableSpare > 0 {
+			c.metrics.DiskAvailableSpare.WithLabelValues(
+				disk.Device,
+				disk.Serial,
+				disk.Model,
+			).Set(float64(disk.AvailableSpare))
+		}
+
+		if disk.CriticalWarning > 0 {
+			c.metrics.DiskCriticalWarning.WithLabelValues(
+				disk.Device,
+				disk.Serial,
+				disk.Model,
+			).Set(float64(disk.CriticalWarning))
+		}
+
+		if disk.MediaErrors > 0 {
+			c.metrics.DiskMediaErrors.WithLabelValues(
+				disk.Device,
+				disk.Serial,
+				disk.Model,
+			).Set(float64(disk.MediaErrors))
+		}
+
+		if disk.ErrorLogEntries > 0 {
+			c.metrics.DiskErrorLogEntries.WithLabelValues(
+				disk.Device,
+				disk.Serial,
+				disk.Model,
+			).Set(float64(disk.ErrorLogEntries))
+		}
 	}
 }
 
