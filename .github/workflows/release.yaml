@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   pre-checks:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       version: ${{ steps.version.outputs.version }}
       is_release: ${{ steps.version.outputs.is_release }}
@@ -60,7 +60,7 @@ jobs:
 
   build:
     needs: pre-checks
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     strategy:
       matrix:
         include:
@@ -145,7 +145,7 @@ jobs:
           retention-days: 7
   release:
     needs: [pre-checks, build]
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout
         uses: actions/checkout@v4
