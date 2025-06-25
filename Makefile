@@ -58,9 +58,17 @@ build:
 test:
 	@echo "Running tests..."
 	go test -v ./...
-	@echo "Running integration test..."
+	
+test/e2e:
+	@echo "Running end-to-end tests..."
 	./scripts/test.sh
-
+	
+test/coverage:
+	@echo "Running tests with coverage..."
+	go test -coverprofile=coverage.out ./...
+	@echo "Generating coverage report..."
+	go tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report generated: coverage.html"
 # Clean build artifacts
 clean:
 	@echo "Cleaning..."
