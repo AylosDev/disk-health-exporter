@@ -18,6 +18,10 @@ permissions:
   packages: write
   id-token: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   pre-checks:
     runs-on: self-hosted
@@ -107,10 +111,7 @@ jobs:
 
           CGO_ENABLED=0 go build -trimpath -buildmode=exe -mod=readonly -ldflags="${LDFLAGS}" -o=${BINARY_NAME} ./cmd/disk-health-exporter
 
-          # Verify binary
-          if [ "${{ matrix.goos }}" != "windows" ]; then
-            file ${BINARY_NAME}
-          fi
+          # Verify binary was created
           ls -la ${BINARY_NAME}
 
       - name: Install UPX
