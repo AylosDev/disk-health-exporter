@@ -381,7 +381,7 @@ func (m *Manager) enrichSoftwareRAIDInfo(raid *types.SoftwareRAIDInfo) {
 		if strings.Contains(line, "UUID :") {
 			parts := strings.Split(line, ":")
 			if len(parts) > 1 {
-				raid.Uuid = strings.TrimSpace(parts[1])
+				raid.UUID = strings.TrimSpace(parts[1])
 			}
 		} else if strings.Contains(line, "Update Time :") {
 			parts := strings.Split(line, ":")

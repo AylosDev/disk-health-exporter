@@ -189,5 +189,5 @@ type SoftwareRAIDInfo struct {
 	SyncAction    string   // Current sync action (resync, recover, etc.)
 	SyncProgress  float64  // Sync progress percentage
 	Bitmap        string   // Bitmap information
-	Uuid          string   // Array UUID
+	UUID          string   // Array UUID
 }

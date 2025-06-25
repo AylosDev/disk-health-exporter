@@ -1,0 +1,205 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g., v1.0.0)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  pre-checks:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_release: ${{ steps.version.outputs.is_release }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+          cache: true
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.version }}" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+            echo "is_release=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+            echo "is_release=true" >> $GITHUB_OUTPUT
+          else
+            VERSION=$(grep '##' CHANGELOG.md | head -n 1 | awk '{print $2}' | tr -d '[]')-dev.$(git rev-parse --short HEAD)
+            echo "is_release=false" >> $GITHUB_OUTPUT
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Version: ${VERSION}"
+
+      - name: Run quality checks
+        run: make audit
+
+      - name: Security scan
+        run: make security/scan
+
+  build:
+    needs: pre-checks
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+          cache: true
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ needs.pre-checks.outputs.version }}
+        run: |
+          BINARY_NAME=disk-health-exporter-${{ matrix.goos }}-${{ matrix.goarch }}
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            BINARY_NAME=${BINARY_NAME}.exe
+          fi
+
+          # Use Makefile build variables and flags
+          COMMIT=$(git rev-parse --short HEAD)
+          BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          GO_VERSION=$(go version | cut -d' ' -f3)
+          MODULE=$(go list -m)
+
+          LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildTime=${BUILD_TIME} -X main.goVersion=${GO_VERSION} -X main.module=${MODULE}"
+
+          CGO_ENABLED=0 go build -trimpath -buildmode=exe -mod=readonly -ldflags="${LDFLAGS}" -o=${BINARY_NAME} ./cmd/disk-health-exporter
+
+          # Verify binary
+          if [ "${{ matrix.goos }}" != "windows" ]; then
+            file ${BINARY_NAME}
+          fi
+          ls -la ${BINARY_NAME}
+
+      - name: Install UPX
+        if: needs.pre-checks.outputs.is_release == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y upx-ucl
+
+      - name: Compress binary
+        if: needs.pre-checks.outputs.is_release == 'true'
+        run: |
+          BINARY_NAME=disk-health-exporter-${{ matrix.goos }}-${{ matrix.goarch }}
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            BINARY_NAME=${BINARY_NAME}.exe
+          fi
+
+          # UPX compression following Makefile approach
+          if [ "${{ matrix.goos }}" = "darwin" ]; then
+            upx -9 ${BINARY_NAME} --force-macos 2>/dev/null || true
+          else
+            upx -9 ${BINARY_NAME} 2>/dev/null || true
+          fi
+
+          echo "Compressed size:"
+          ls -la ${BINARY_NAME}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: disk-health-exporter-*
+          retention-days: 7
+  release:
+    needs: [pre-checks, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts/
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release/
+          find artifacts/ -name "disk-health-exporter-*" -exec cp {} release/ \;
+          cd release/
+
+          # Generate checksums
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum disk-health-exporter-* > disk-health-exporter-checksums.txt
+          else
+            shasum -a 256 disk-health-exporter-* > disk-health-exporter-checksums.txt
+          fi
+
+          ls -la
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          if [[ "${{ needs.pre-checks.outputs.is_release }}" == "true" ]]; then
+            # Extract changelog section for this version
+            VERSION_CLEAN=$(echo "${{ needs.pre-checks.outputs.version }}" | sed 's/^v//')
+            awk "/^## \[${VERSION_CLEAN}\]/{flag=1; next} /^## \[/{flag=0} flag" CHANGELOG.md > release_notes.txt
+            if [[ ! -s release_notes.txt ]]; then
+              echo "Release ${{ needs.pre-checks.outputs.version }}" > release_notes.txt
+              echo "" >> release_notes.txt
+              echo "Auto-generated release from commit $(git rev-parse --short HEAD)" >> release_notes.txt
+            fi
+          else
+            echo "Development build ${{ needs.pre-checks.outputs.version }}" > release_notes.txt
+            echo "" >> release_notes.txt
+            echo "This is a development build from the main branch." >> release_notes.txt
+            echo "Commit: $(git rev-parse --short HEAD)" >> release_notes.txt
+            echo "$(git log -1 --pretty=format:'Message: %s')" >> release_notes.txt
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.pre-checks.outputs.version }}
+          name: "Disk Health Exporter ${{ needs.pre-checks.outputs.version }}"
+          body_path: release_notes.txt
+          draft: ${{ needs.pre-checks.outputs.is_release != 'true' }}
+          prerelease: ${{ contains(needs.pre-checks.outputs.version, '-dev') }}
+          files: |
+            release/*
+          token: ${{ secrets.GITHUB_TOKEN }}

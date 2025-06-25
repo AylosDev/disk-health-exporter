@@ -78,6 +78,13 @@ audit: test
 	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
 
+# security/scan: run security vulnerability checks
+.PHONY: security/scan
+security/scan:
+	@echo "Running security vulnerability checks..."
+	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+	@echo "Security scan completed"
+
 .PHONY: run/live
 run/live:
 	go run github.com/cosmtrek/air@v1.43.0 \
@@ -147,6 +154,13 @@ docker:
 	@echo "Building Docker image..."
 	docker build -f deployments/Dockerfile -t $(DOCKER_IMAGE):latest .
 	docker build -f deployments/Dockerfile -t $(DOCKER_IMAGE):$(VERSION) .
+
+# Build Docker image for production
+.PHONY: production/docker
+production/docker:
+	@echo "Building production Docker image..."
+	docker build -f deployments/Dockerfile -t $(DOCKER_IMAGE):$(VERSION) .
+	docker build -f deployments/Dockerfile -t $(DOCKER_IMAGE):latest .
 
 # Install the exporter (universal - detects OS automatically)
 install:
