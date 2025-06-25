@@ -2,11 +2,11 @@ package collector
 
 import (
 	"log"
-	"runtime"
 	"time"
 
 	"disk-health-exporter/internal/disk"
 	"disk-health-exporter/internal/metrics"
+	"disk-health-exporter/internal/system"
 	"disk-health-exporter/pkg/types"
 )
 
@@ -15,14 +15,16 @@ type Collector struct {
 	metrics     *metrics.Metrics
 	diskManager *disk.Manager
 	interval    time.Duration
+	systemInfo  *system.SystemInfo
 }
 
 // New creates a new collector
-func New(m *metrics.Metrics, interval time.Duration) *Collector {
+func New(m *metrics.Metrics, interval time.Duration, sysInfo *system.SystemInfo) *Collector {
 	return &Collector{
 		metrics:     m,
 		diskManager: disk.New(),
 		interval:    interval,
+		systemInfo:  sysInfo,
 	}
 }
 
@@ -50,14 +52,13 @@ func (c *Collector) updateMetrics() {
 	// Clear previous metrics
 	c.metrics.Reset()
 
-	// Detect operating system
-	osType := runtime.GOOS
-	log.Printf("Detected OS: %s", osType)
+	// Use cached system info instead of detecting each time
+	log.Printf("Using detected OS: %s", c.systemInfo.OS)
 
-	switch osType {
-	case "linux":
+	switch c.systemInfo.Platform {
+	case system.PlatformLinux:
 		c.collectLinuxMetrics()
-	case "darwin":
+	case system.PlatformMacOS:
 		c.collectMacOSMetrics()
 	default:
 		c.collectFallbackMetrics()
@@ -89,7 +90,7 @@ func (c *Collector) collectMacOSMetrics() {
 
 // collectFallbackMetrics collects metrics using fallback method
 func (c *Collector) collectFallbackMetrics() {
-	log.Printf("Using fallback disk detection for OS: %s", runtime.GOOS)
+	log.Printf("Using fallback disk detection for OS: %s", c.systemInfo.OS)
 
 	// Try to get regular disks as fallback
 	disks, _ := c.diskManager.GetLinuxDisks()
@@ -135,6 +136,34 @@ func (c *Collector) updateDiskMetrics(disks []types.DiskInfo) {
 		// It would need to be added to the DiskInfo struct and populated from SMART data
 		// For now, we don't set this metric unless we have actual data
 	}
+}
+
+// GetCurrentDisks returns current disk information
+func (c *Collector) GetCurrentDisks() []types.DiskInfo {
+	switch c.systemInfo.Platform {
+	case system.PlatformLinux:
+		disks, _ := c.diskManager.GetLinuxDisks()
+		return disks
+	case system.PlatformMacOS:
+		return c.diskManager.GetMacOSDisks()
+	default:
+		disks, _ := c.diskManager.GetLinuxDisks()
+		return disks
+	}
+}
+
+// GetCurrentRAIDArrays returns current RAID array information
+func (c *Collector) GetCurrentRAIDArrays() []types.RAIDInfo {
+	if c.systemInfo.Platform == system.PlatformLinux {
+		_, raidArrays := c.diskManager.GetLinuxDisks()
+		return raidArrays
+	}
+	return []types.RAIDInfo{}
+}
+
+// GetSystemInfo returns the cached system information
+func (c *Collector) GetSystemInfo() *system.SystemInfo {
+	return c.systemInfo
 }
 
 // getHealthStatusValue converts health string to numeric value
