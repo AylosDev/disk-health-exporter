@@ -33,6 +33,8 @@ The Disk Health Exporter monitors:
 
 ### Prerequisites
 
+**Note**: The installation script does NOT automatically install system dependencies. Please install monitoring tools manually:
+
 ```bash
 # Linux - Install monitoring tools
 sudo apt-get install smartmontools megacli mdadm
@@ -41,10 +43,31 @@ sudo apt-get install smartmontools megacli mdadm
 brew install smartmontools
 ```
 
+The installer will warn about missing tools but will continue with the installation.
+
 ### Installation
 
+#### Quick Install (Recommended)
+
 ```bash
-# Build from source
+# Install latest version (binary only)
+curl -sSL https://raw.githubusercontent.com/AylosDev/disk-health-exporter/main/scripts/install.sh | bash
+
+# Install with systemd/launchd service
+curl -sSL https://raw.githubusercontent.com/AylosDev/disk-health-exporter/main/scripts/install.sh | bash -s -- -s
+
+# Install specific version
+curl -sSL https://raw.githubusercontent.com/AylosDev/disk-health-exporter/main/scripts/install.sh | bash -s -- -v v1.0.0
+
+# Download and run locally for more control
+wget https://raw.githubusercontent.com/AylosDev/disk-health-exporter/main/scripts/install.sh
+chmod +x install.sh
+./install.sh --help
+```
+
+#### Build from Source (Alternative)
+
+```bash
 git clone <repository-url>
 cd disk-health-exporter
 make build

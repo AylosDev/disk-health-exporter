@@ -55,19 +55,56 @@ brew install nvme-cli  # May not be available on all macOS versions
 
 ### Method 1: Universal Installation Script (Recommended)
 
-The project includes a universal installation script that automatically detects your operating system:
+The project includes a universal installation script that downloads binaries from GitHub releases and automatically installs them:
+
+#### Quick Installation
 
 ```bash
-# Download and run the universal installer
-./scripts/install.sh
+# Install latest version (binary only)
+curl -sSL https://raw.githubusercontent.com/edgardoacosta/disk-health-exporter/main/scripts/install.sh | bash
+
+# Install with systemd/launchd service
+curl -sSL https://raw.githubusercontent.com/edgardoacosta/disk-health-exporter/main/scripts/install.sh | bash -s -- -s
 ```
 
-This script will:
+#### Advanced Installation Options
 
-- Detect your operating system (Linux/macOS)
-- Install appropriate system service files
-- Set up proper permissions
-- Start the service
+```bash
+# Download script for local execution
+wget https://raw.githubusercontent.com/edgardoacosta/disk-health-exporter/main/scripts/install.sh
+chmod +x install.sh
+
+# View help and options
+./install.sh --help
+
+# Install specific version
+./install.sh -v v1.0.0
+
+# Install with service (systemd on Linux, launchd on macOS)
+./install.sh -s
+
+# Install specific version with service
+./install.sh -v v1.0.0 -s
+```
+
+#### What the Script Does
+
+- **OS Detection**: Automatically detects Linux/macOS and architecture (amd64/arm64)
+- **GitHub Releases**: Downloads pre-compiled binaries from GitHub releases
+- **Version Management**: Installs latest version or specific version if specified
+- **Binary Installation**: Installs binary to `/usr/local/bin/` with proper permissions
+- **Optional Service Setup**:
+  - Linux: Creates systemd service with prometheus user
+  - macOS: Creates LaunchAgent for current user
+- **Dependency Checking**: Warns about missing tools but continues installation
+
+**Important**: The script does NOT automatically install system dependencies like smartmontools. You must install monitoring tools manually before running the exporter for full functionality.
+
+#### Supported Platforms
+
+- **Linux**: Ubuntu, Debian, CentOS, RHEL, Fedora, Arch Linux
+- **macOS**: Intel and Apple Silicon
+- **Architectures**: amd64 (x86_64) and arm64 (aarch64)
 
 ### Method 2: Build from Source
 
