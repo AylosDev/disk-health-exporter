@@ -52,6 +52,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved MegaCLI RAID level parsing to handle complex formats like "Primary-5, Secondary-0, RAID Level Qualifier-3"
 - Added proper size parsing for human-readable formats (TB, GB, etc.) in RAID array detection
 - Enhanced MegaCLI output parsing to capture additional array information (size, drive count)
+- **Major macOS disk detection improvements**:
+  - Fixed smartctl scan output parsing bug that incorrectly extracted device types (was getting `-d` instead of actual type like `nvme`)
+  - Improved error handling for smartctl exit codes, especially exit code 4 which is common on macOS but still returns valid data
+  - Enhanced NVMe drive support with extraction of detailed health metrics (percentage used, available spare, media errors)
+  - Added proper ATA/SATA drive support for non-NVMe drives with RPM, form factor, and capacity detection
+  - Implemented multi-protocol fallback detection (nvme → auto → ata → scsi) for better compatibility
+  - Added structured approach with separate scanning, direct detection, and basic entry creation methods
+  - Enhanced logging with more informative messages including temperature readings and health status
+  - Better temperature handling using NVMe-specific sensors when available for more accurate readings
 
 ## [0.0.4] - 2025-06-26
 
