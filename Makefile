@@ -62,7 +62,7 @@ test:
 test/e2e:
 	@echo "Running end-to-end tests..."
 	./scripts/test.sh
-	
+
 test/coverage:
 	@echo "Running tests with coverage..."
 	go test -coverprofile=coverage.out ./...
@@ -73,6 +73,7 @@ test/coverage:
 clean:
 	@echo "Cleaning..."
 	rm -f $(BINARY_NAME)
+	rm -rf ${TEMP_DIR}/bin ${TEMP_DIR}/release
 	docker rmi $(DOCKER_IMAGE) 2>/dev/null || true
 
 # audit: run quality control checks
