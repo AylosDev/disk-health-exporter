@@ -86,12 +86,94 @@ curl http://localhost:9100/metrics
 curl -s http://localhost:9100/metrics | grep tool_available
 ```
 
+### Configuration
+
+The exporter can be configured using command-line flags:
+
+```bash
+# Basic usage with default settings
+./disk-health-exporter
+
+# Custom port and metrics path
+./disk-health-exporter -port 8080 -metrics-path /health
+
+# Adjust collection interval and log level
+./disk-health-exporter -collect-interval 60s -log-level debug
+
+# Target specific disks only
+./disk-health-exporter -target-disks "/dev/sda,/dev/nvme0n1"
+
+# Show help
+./disk-health-exporter -help
+```
+
+#### Disk Filtering
+
+The exporter supports filtering disks to monitor:
+
+**Target Specific Disks:**
+
+```bash
+# Monitor only specific disks
+./disk-health-exporter -target-disks "/dev/sda,/dev/nvme0n1"
+
+# Using environment variable
+TARGET_DISKS="/dev/sda,/dev/sdb" ./disk-health-exporter
+```
+
+**Automatic Filtering:**
+
+The exporter automatically ignores certain device types for internal use:
+
+- `/dev/loop*` - Loop devices (mounted images/files)
+- `/dev/ram*` - RAM disks
+- `/dev/dm-*` - Device mapper devices (handled by underlying devices)
+
+**Examples:**
+
+```bash
+# Monitor all detected disks (default behavior)
+./disk-health-exporter
+
+# Monitor only NVMe drives
+./disk-health-exporter -target-disks "/dev/nvme0n1,/dev/nvme1n1"
+
+# Monitor specific SATA drive
+./disk-health-exporter -target-disks "/dev/sda"
+```
+
+#### Available Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-port` | `9100` | Port to listen on |
+| `-metrics-path` | `/metrics` | Path to expose metrics |
+| `-collect-interval` | `30s` | Interval between disk health collections |
+| `-log-level` | `info` | Log level (debug, info, warn, error) |
+| `-target-disks` | `""` | Comma-separated list of specific disks to monitor |
+| `-help` | `false` | Show help message |
+
+#### Environment Variable Fallback
+
+For backwards compatibility, environment variables are used as fallback values:
+
+| Environment Variable | Flag Equivalent |
+|---------------------|-----------------|
+| `PORT` | `-port` |
+| `METRICS_PATH` | `-metrics-path` |
+| `COLLECT_INTERVAL` | `-collect-interval` |
+| `LOG_LEVEL` | `-log-level` |
+| `TARGET_DISKS` | `-target-disks` |
+
+**Note**: Command-line flags take priority over environment variables.
+
 ## Key Features
 
 - **30+ Comprehensive Metrics**: Health status, temperature, errors, wear leveling, I/O stats
 - **Multi-Tool Support**: smartctl, MegaCLI, StorCLI, Arcconf, mdadm, NVMe CLI
 - **Hardware & Software RAID**: Complete RAID monitoring with rebuild progress
 - **SSD/NVMe Specific**: Endurance monitoring, wear leveling, critical warnings
+- **Disk Filtering**: Target specific disks or use automatic filtering for loop/virtual devices
 - **Tool Detection**: Automatic detection and graceful degradation
 - **Read-Only**: Safe monitoring without system modifications
 
@@ -140,7 +222,7 @@ disk_monitoring_tool_available{tool="smartctl",version="smartmontools 7.2"} 1
 
 ## Project Structure
 
-```
+```text
 ├── cmd/                    # Main application
 ├── internal/               # Private application code
 │   ├── collector/          # Metrics collection

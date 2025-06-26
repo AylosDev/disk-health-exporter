@@ -13,16 +13,16 @@ import (
 )
 
 func main() {
-	log.Println("Starting Disk Health Prometheus Exporter...")
-
 	// Load configuration
 	cfg := config.New()
+
+	log.Println("Starting Disk Health Prometheus Exporter...")
 
 	// Initialize metrics
 	m := metrics.New()
 
-	// Create collector
-	c := collector.New(m, cfg.CollectInterval)
+	// Create collector with configuration
+	c := collector.NewWithConfig(m, cfg.CollectInterval, cfg)
 
 	// Start metrics collection in background
 	go c.Start()

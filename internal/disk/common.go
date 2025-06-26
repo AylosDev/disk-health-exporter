@@ -14,12 +14,35 @@ import (
 
 // Manager handles disk detection and monitoring
 type Manager struct {
-	tools types.ToolInfo
+	tools          types.ToolInfo
+	targetDisks    []string // Specific disks to monitor (empty = all)
+	ignorePatterns []string // Patterns to ignore
 }
 
-// New creates a new disk manager
+// New creates a new disk manager with default settings
 func New() *Manager {
-	m := &Manager{}
+	return NewWithConfig("", []string{})
+}
+
+// NewWithConfig creates a new disk manager with specific configuration
+func NewWithConfig(targetDisks string, ignorePatterns []string) *Manager {
+	m := &Manager{
+		ignorePatterns: ignorePatterns,
+	}
+
+	// Parse target disks
+	if targetDisks != "" {
+		m.targetDisks = strings.Split(strings.ReplaceAll(targetDisks, " ", ""), ",")
+		// Filter out empty strings
+		var filtered []string
+		for _, disk := range m.targetDisks {
+			if disk != "" {
+				filtered = append(filtered, disk)
+			}
+		}
+		m.targetDisks = filtered
+	}
+
 	m.detectTools()
 	return m
 }
@@ -441,4 +464,41 @@ func getSoftwareRAIDStatusValue(state string) int {
 	default:
 		return 0
 	}
+}
+
+// shouldIncludeDisk checks if a disk should be included based on configuration
+func (m *Manager) shouldIncludeDisk(device string) bool {
+	// First check ignore patterns
+	for _, pattern := range m.ignorePatterns {
+		if strings.HasPrefix(device, pattern) {
+			log.Printf("Ignoring disk %s (matches ignore pattern: %s)", device, pattern)
+			return false
+		}
+	}
+
+	// If target disks are specified, only include those
+	if len(m.targetDisks) > 0 {
+		for _, target := range m.targetDisks {
+			if device == target {
+				log.Printf("Including target disk: %s", device)
+				return true
+			}
+		}
+		log.Printf("Skipping disk %s (not in target list)", device)
+		return false
+	}
+
+	// No specific targets, include if not ignored
+	return true
+}
+
+// filterDisks filters a slice of DiskInfo based on configuration
+func (m *Manager) filterDisks(disks []types.DiskInfo) []types.DiskInfo {
+	var filtered []types.DiskInfo
+	for _, disk := range disks {
+		if m.shouldIncludeDisk(disk.Device) {
+			filtered = append(filtered, disk)
+		}
+	}
+	return filtered
 }

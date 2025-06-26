@@ -19,6 +19,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.0.5] - 2025-06-26
+
+### Added
+
+- Command-line flag support for all configuration options
+- Help system with `-help` flag showing usage information and examples
+- Environment variable fallback for backwards compatibility
+- Priority system where flags override environment variables
+- Comprehensive configuration documentation in README.md
+- Enhanced test suite for configuration functionality
+- Support for both duration strings (30s, 2m) and integer seconds for interval parsing
+- **Disk filtering functionality** with `-target-disks` flag for monitoring specific disks
+- **Automatic filtering** of loop devices (`/dev/loop*`), RAM disks (`/dev/ram*`), and device mapper devices (`/dev/dm-*`)
+- `TARGET_DISKS` environment variable support for disk filtering
+- Comprehensive disk filtering documentation in `docs/disk-filtering.md`
+- Performance-optimized filtering applied during disk detection rather than post-processing
+- Detailed logging for disk inclusion/exclusion decisions
+
+### Changed
+
+- Configuration system now uses command-line flags as primary method instead of environment variables
+- Startup message moved after flag parsing to prevent noise with help output
+- Updated README.md with comprehensive configuration section including flag documentation
+- Flag parsing happens early in startup process for better user experience
+- **Enhanced disk manager** to support configuration-based filtering
+- **Improved collector** with `NewWithConfig()` constructor for configuration-aware disk detection
+- **Updated disk detection methods** on both Linux and macOS to apply filtering during detection
+
+### Fixed
+
+- Improved MegaCLI RAID level parsing to handle complex formats like "Primary-5, Secondary-0, RAID Level Qualifier-3"
+- Added proper size parsing for human-readable formats (TB, GB, etc.) in RAID array detection
+- Enhanced MegaCLI output parsing to capture additional array information (size, drive count)
+
 ## [0.0.4] - 2025-06-26
 
 ### Added

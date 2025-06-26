@@ -5,10 +5,13 @@ import (
 	"log"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"disk-health-exporter/pkg/types"
 )
+
+var sizeRegex = regexp.MustCompile(`(?i)^\s*([\d.]+)\s*([a-zA-Z]+)?\s*$`)
 
 // GetLinuxDisks gets all disks on Linux systems using multiple tools
 func (m *Manager) GetLinuxDisks() ([]types.DiskInfo, []types.RAIDInfo) {
@@ -17,7 +20,7 @@ func (m *Manager) GetLinuxDisks() ([]types.DiskInfo, []types.RAIDInfo) {
 
 	log.Println("Starting Linux disk detection with multi-tool approach...")
 
-	// 1. Check hardware RAID arrays first
+	// Check hardware RAID arrays
 	if m.tools.MegaCLI {
 		log.Println("Detecting MegaCLI RAID arrays...")
 		raidArrays := m.checkMegaCLI()
@@ -27,7 +30,7 @@ func (m *Manager) GetLinuxDisks() ([]types.DiskInfo, []types.RAIDInfo) {
 		log.Printf("Found %d MegaCLI RAID arrays and %d RAID disks", len(raidArrays), len(raidDisks))
 	}
 
-	// 2. Check other hardware RAID controllers
+	// Check other hardware RAID controllers
 	if m.tools.Storcli {
 		log.Println("Detecting StorCLI RAID arrays...")
 		storcliRAIDs, storcliDisks := m.checkStorCLI()
@@ -44,7 +47,7 @@ func (m *Manager) GetLinuxDisks() ([]types.DiskInfo, []types.RAIDInfo) {
 		log.Printf("Found %d Arcconf RAID arrays and %d RAID disks", len(arcconfRAIDs), len(arcconfDisks))
 	}
 
-	// 3. Check software RAID
+	// Check software RAID
 	if m.tools.Mdadm {
 		log.Println("Detecting software RAID arrays...")
 		softwareRAIDs := m.getSoftwareRAIDInfo()
@@ -69,18 +72,20 @@ func (m *Manager) GetLinuxDisks() ([]types.DiskInfo, []types.RAIDInfo) {
 		log.Printf("Found %d software RAID arrays", len(softwareRAIDs))
 	}
 
-	// 4. Get regular disks using smartctl and other tools
+	// Get regular disks using smartctl and other tools
 	log.Println("Detecting regular disks...")
 	regularDisks := m.getRegularDisksMultiTool()
 	allDisks = append(allDisks, regularDisks...)
 	log.Printf("Found %d regular disks", len(regularDisks))
 
-	// 5. Try to enrich existing disk data with additional tools
-	log.Println("Enriching disk data with additional tools...")
 	m.enrichDiskData(allDisks)
 
-	log.Printf("Total: %d disks, %d RAID arrays detected", len(allDisks), len(allRAIDs))
-	return allDisks, allRAIDs
+	// 6. Apply filtering based on configuration
+	log.Println("Applying disk filtering...")
+	filteredDisks := m.filterDisks(allDisks)
+
+	log.Printf("Total: %d disks detected, %d disks after filtering, %d RAID arrays detected", len(allDisks), len(filteredDisks), len(allRAIDs))
+	return filteredDisks, allRAIDs
 }
 
 // checkMegaCLI checks for RAID arrays using MegaCLI
@@ -120,10 +125,39 @@ func (m *Manager) checkMegaCLI() []types.RAIDInfo {
 				currentArray.ArrayID = matches[1]
 			}
 		} else if strings.Contains(line, "RAID Level") {
-			// Extract RAID level
+			// Extract RAID level - handle format like "Primary-5, Secondary-0, RAID Level Qualifier-3"
 			parts := strings.Split(line, ":")
 			if len(parts) > 1 {
-				currentArray.RaidLevel = strings.TrimSpace(parts[1])
+				raidLevelStr := strings.TrimSpace(parts[1])
+				// Extract the primary RAID level (e.g., "Primary-5" -> "RAID 5")
+				if strings.Contains(raidLevelStr, "Primary-") {
+					re := regexp.MustCompile(`Primary-(\d+)`)
+					matches := re.FindStringSubmatch(raidLevelStr)
+					if len(matches) > 1 {
+						currentArray.RaidLevel = "RAID " + matches[1]
+					} else {
+						currentArray.RaidLevel = raidLevelStr
+					}
+				} else {
+					currentArray.RaidLevel = raidLevelStr
+				}
+			}
+		} else if strings.Contains(line, "Size") && strings.Contains(line, ":") && !strings.Contains(line, "Sector Size") && !strings.Contains(line, "Parity Size") && !strings.Contains(line, "Strip Size") {
+			// Extract array size - store as string for now since MegaCLI uses human-readable format (e.g., "113.795 TB")
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				sizeStr := strings.TrimSpace(parts[1])
+				// Convert human-readable size to bytes if possible, otherwise store as 0
+				currentArray.Size = parseSizeToBytes(sizeStr)
+			}
+		} else if strings.Contains(line, "Number Of Drives") {
+			// Extract number of drives
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				numDrivesStr := strings.TrimSpace(parts[1])
+				if num, err := strconv.Atoi(numDrivesStr); err == nil && num > 0 {
+					currentArray.NumDrives = num
+				}
 			}
 		} else if strings.Contains(line, "State") {
 			// Extract state
@@ -132,6 +166,8 @@ func (m *Manager) checkMegaCLI() []types.RAIDInfo {
 				state := strings.TrimSpace(parts[1])
 				currentArray.State = state
 				currentArray.Status = getRaidStatusValue(state)
+				currentArray.Type = "hardware"
+				currentArray.Controller = "MegaCLI"
 
 				if currentArray.ArrayID != "" {
 					raidArrays = append(raidArrays, currentArray)
@@ -310,7 +346,7 @@ func (m *Manager) getRegularDisksMultiTool() []types.DiskInfo {
 	if m.tools.SmartCtl {
 		smartDisks := m.getRegularDisksSmartCtl()
 		for _, disk := range smartDisks {
-			if !seenDevices[disk.Device] {
+			if !seenDevices[disk.Device] && m.shouldIncludeDisk(disk.Device) {
 				allDisks = append(allDisks, disk)
 				seenDevices[disk.Device] = true
 			}
@@ -321,7 +357,7 @@ func (m *Manager) getRegularDisksMultiTool() []types.DiskInfo {
 	if m.tools.Lsblk {
 		lsblkDisks := m.getDisksFromLsblk()
 		for _, disk := range lsblkDisks {
-			if !seenDevices[disk.Device] {
+			if !seenDevices[disk.Device] && m.shouldIncludeDisk(disk.Device) {
 				// Try to get SMART data for this device
 				if m.tools.SmartCtl {
 					smartDisk := getSmartCtlInfo(disk.Device)
@@ -346,7 +382,7 @@ func (m *Manager) getRegularDisksMultiTool() []types.DiskInfo {
 	if m.tools.Nvme {
 		nvmeDisks := m.getNVMeDisks()
 		for _, disk := range nvmeDisks {
-			if !seenDevices[disk.Device] {
+			if !seenDevices[disk.Device] && m.shouldIncludeDisk(disk.Device) {
 				allDisks = append(allDisks, disk)
 				seenDevices[disk.Device] = true
 			}
@@ -383,8 +419,8 @@ func (m *Manager) getRegularDisksSmartCtl() []types.DiskInfo {
 		// Check various device types (sd*, nvme*, etc.)
 		if strings.Contains(device, "sd") || strings.Contains(device, "nvme") ||
 			strings.Contains(device, "hd") || strings.Contains(device, "vd") {
-			// Skip if this device is part of a RAID array
-			if !isPartOfSoftwareRAID(device) {
+			// Skip if this device is part of a RAID array or should be ignored
+			if !isPartOfSoftwareRAID(device) && m.shouldIncludeDisk(device) {
 				diskInfo := getSmartCtlInfo(device)
 				if diskInfo.Device != "" {
 					diskInfo.Type = "regular"
@@ -527,4 +563,39 @@ func (m *Manager) enrichWithFilesystemInfo(disk *types.DiskInfo) {
 
 	// This is just an example - you could extend this to track filesystem usage
 	_ = string(output) // Placeholder for future filesystem metrics
+}
+
+// parseSizeToBytes converts human-readable size strings (e.g., "113.795 TB") to bytes
+func parseSizeToBytes(sizeStr string) int64 {
+	if sizeStr == "" {
+		return 0
+	}
+
+	matches := sizeRegex.FindStringSubmatch(sizeStr)
+	if len(matches) != 3 {
+		return 0
+	}
+
+	value, err := strconv.ParseFloat(matches[1], 64)
+	if err != nil {
+		return 0
+	}
+
+	unit := strings.ToUpper(matches[2])
+	multipliers := map[string]float64{
+		"B":     1,
+		"BYTES": 1,
+		"KB":    1 << 10,
+		"MB":    1 << 20,
+		"GB":    1 << 30,
+		"TB":    1 << 40,
+		"PB":    1 << 50,
+	}
+
+	multiplier, ok := multipliers[unit]
+	if !ok {
+		return 0
+	}
+
+	return int64(value * multiplier)
 }

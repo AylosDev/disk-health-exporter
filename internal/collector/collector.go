@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"time"
 
+	"disk-health-exporter/internal/config"
 	"disk-health-exporter/internal/disk"
 	"disk-health-exporter/internal/metrics"
 	"disk-health-exporter/pkg/types"
@@ -22,6 +23,15 @@ func New(m *metrics.Metrics, interval time.Duration) *Collector {
 	return &Collector{
 		metrics:     m,
 		diskManager: disk.New(),
+		interval:    interval,
+	}
+}
+
+// NewWithConfig creates a new collector with configuration
+func NewWithConfig(m *metrics.Metrics, interval time.Duration, cfg *config.Config) *Collector {
+	return &Collector{
+		metrics:     m,
+		diskManager: disk.NewWithConfig(cfg.TargetDisks, cfg.IgnorePatterns),
 		interval:    interval,
 	}
 }

@@ -53,7 +53,6 @@ func (m *Manager) GetMacOSDisks() []types.DiskInfo {
 
 	// If no devices found via scan, try direct approach for common macOS devices
 	if len(disks) == 0 {
-		log.Println("No devices found via scan, trying direct detection...")
 
 		// Try common macOS device patterns
 		commonDevices := []string{
@@ -112,8 +111,12 @@ func (m *Manager) GetMacOSDisks() []types.DiskInfo {
 		}
 	}
 
-	log.Printf("Found %d disks on macOS", len(disks))
-	return disks
+	log.Printf("Found %d disks on macOS before filtering", len(disks))
+
+	// Apply filtering based on configuration
+	filteredDisks := m.filterDisks(disks)
+	log.Printf("Found %d disks on macOS after filtering", len(filteredDisks))
+	return filteredDisks
 }
 
 // getMacOSSmartCtlInfo gets SMART information for a specific device on macOS
