@@ -112,12 +112,6 @@ jobs:
           # Verify binary was created
           ls -la ${BINARY_NAME}
 
-      - name: Install UPX
-        if: needs.pre-checks.outputs.is_release == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y upx-ucl
-
       - name: Compress binary
         if: needs.pre-checks.outputs.is_release == 'true'
         run: |
