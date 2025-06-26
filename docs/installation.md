@@ -61,17 +61,17 @@ The project includes a universal installation script that downloads binaries fro
 
 ```bash
 # Install latest version (binary only)
-curl -sSL https://raw.githubusercontent.com/edgardoacosta/disk-health-exporter/main/scripts/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/AylosDev/disk-health-exporter/main/scripts/install.sh | bash
 
 # Install with systemd/launchd service
-curl -sSL https://raw.githubusercontent.com/edgardoacosta/disk-health-exporter/main/scripts/install.sh | bash -s -- -s
+curl -sSL https://raw.githubusercontent.com/AylosDev/disk-health-exporter/main/scripts/install.sh | bash -s -- -s
 ```
 
 #### Advanced Installation Options
 
 ```bash
 # Download script for local execution
-wget https://raw.githubusercontent.com/edgardoacosta/disk-health-exporter/main/scripts/install.sh
+wget https://raw.githubusercontent.com/AylosDev/disk-health-exporter/main/scripts/install.sh
 chmod +x install.sh
 
 # View help and options

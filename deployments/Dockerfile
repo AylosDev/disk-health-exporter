@@ -30,10 +30,10 @@ RUN apt-get update && \
   ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
-# Install MegaCLI
+# Install MegaCLI (optional for RAID monitoring)
 RUN wget -O /tmp/megacli.deb https://docs.broadcom.com/docs-and-downloads/raid-controllers/raid-controllers-common-files/8-07-14_MegaCLI.zip || true
-# Note: You may need to manually download and install MegaCLI from Broadcom's website
-# For now, we'll create a symbolic link that might work if megacli is available
+# MegaCLI may need manual installation from Broadcom's website
+# Create symbolic links for common MegaCLI locations
 RUN ln -sf /usr/sbin/megacli /usr/local/bin/megacli || true
 RUN ln -sf /opt/MegaRAID/MegaCli/MegaCli64 /usr/local/bin/MegaCli64 || true
 
@@ -56,10 +56,10 @@ ENV PORT=9100
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:9100/metrics || exit 1
 
-# Note: This container needs to run with --privileged flag to access disk information
-# or with specific capabilities and device mounts
+# This container requires --privileged flag to access disk information
+# or specific capabilities and device mounts
 
-# Switch to non-root user (commented out as it may need privileged access)
+# Switch to non-root user (commented out for disk access requirements)
 # USER exporter
 
 # Run the exporter
