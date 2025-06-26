@@ -171,11 +171,29 @@ jobs:
           if [[ "${{ needs.pre-checks.outputs.is_release }}" == "true" ]]; then
             # Extract changelog section for this version
             VERSION_CLEAN=$(echo "${{ needs.pre-checks.outputs.version }}" | sed 's/^v//')
-            awk "/^## \[${VERSION_CLEAN}\]/{flag=1; next} /^## \[/{flag=0} flag" CHANGELOG.md > release_notes.txt
-            if [[ ! -s release_notes.txt ]]; then
-              echo "Release ${{ needs.pre-checks.outputs.version }}" > release_notes.txt
+            echo "Looking for version ${VERSION_CLEAN} in CHANGELOG.md"
+            
+            # Check if version exists in changelog
+            if grep -q "^## \[${VERSION_CLEAN}\]" CHANGELOG.md; then
+              echo "Found version ${VERSION_CLEAN} in changelog, extracting notes..."
+              awk "/^## \[${VERSION_CLEAN}\]/{flag=1; next} /^## \[/{flag=0} flag" CHANGELOG.md > release_notes.txt
+              
+              # Remove empty lines at the end and clean up
+              sed -i '/^[[:space:]]*$/d' release_notes.txt
+              
+              # Verify we actually extracted content
+              if [[ ! -s release_notes.txt ]]; then
+                echo "No content found for version ${VERSION_CLEAN}" >> release_notes.txt
+                echo "" >> release_notes.txt
+                echo "No notable changes documented for this release." >> release_notes.txt
+              fi
+            else
+              echo "Version ${VERSION_CLEAN} not found in CHANGELOG.md, generating default notes..."
+              echo "## Release ${{ needs.pre-checks.outputs.version }}" > release_notes.txt
               echo "" >> release_notes.txt
-              echo "Auto-generated release from commit $(git rev-parse --short HEAD)" >> release_notes.txt
+              echo "No notable changes documented for this release." >> release_notes.txt
+              echo "" >> release_notes.txt
+              echo "_This release was created from commit $(git rev-parse --short HEAD)_" >> release_notes.txt
             fi
           else
             echo "Development build ${{ needs.pre-checks.outputs.version }}" > release_notes.txt
@@ -184,6 +202,9 @@ jobs:
             echo "Commit: $(git rev-parse --short HEAD)" >> release_notes.txt
             echo "$(git log -1 --pretty=format:'Message: %s')" >> release_notes.txt
           fi
+
+          echo "Generated release notes:"
+          cat release_notes.txt
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
