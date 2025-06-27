@@ -142,6 +142,67 @@ This document provides a comprehensive reference for all metrics exported by the
 - **`software_raid_array_size_bytes`**: Software RAID array size in bytes
   - Labels: device, level
 
+## RAID Controller Battery Metrics
+
+RAID controllers often have backup batteries (BBU - Backup Battery Unit) to ensure data integrity during power failures. These metrics provide comprehensive monitoring of battery health and status.
+
+### Battery Status and Health
+
+- **`raid_battery_status`**: RAID controller battery status
+  - Values: `0` (unknown), `1` (optimal), `2` (warning), `3` (critical)
+  - Labels: adapter_id, battery_type, state, controller
+
+- **`raid_battery_missing`**: Battery pack missing indicator
+  - Values: `0` (present), `1` (missing)
+  - Labels: adapter_id, battery_type, controller
+
+- **`raid_battery_replacement_required`**: Battery replacement required indicator
+  - Values: `0` (not required), `1` (required)
+  - Labels: adapter_id, battery_type, controller
+
+- **`raid_battery_capacity_low`**: Battery remaining capacity low indicator
+  - Values: `0` (capacity normal), `1` (capacity low)
+  - Labels: adapter_id, battery_type, controller
+
+### Battery Physical Measurements
+
+- **`raid_battery_voltage_millivolts`**: Battery voltage in millivolts
+  - Labels: adapter_id, battery_type, controller
+
+- **`raid_battery_current_milliamps`**: Battery current in milliamps
+  - Labels: adapter_id, battery_type, controller
+
+- **`raid_battery_temperature_celsius`**: Battery temperature in Celsius
+  - Labels: adapter_id, battery_type, controller
+
+### Battery Energy and Capacity
+
+- **`raid_battery_pack_energy_joules`**: Battery pack energy in joules
+  - Labels: adapter_id, battery_type, controller
+
+- **`raid_battery_capacitance`**: Battery capacitance
+  - Labels: adapter_id, battery_type, controller
+
+- **`raid_battery_backup_charge_time_hours`**: Battery backup charge time in hours
+  - Labels: adapter_id, battery_type, controller
+
+### Battery Design Specifications
+
+- **`raid_battery_design_capacity_joules`**: Battery design capacity in joules
+  - Labels: adapter_id, battery_type, controller
+
+- **`raid_battery_design_voltage_millivolts`**: Battery design voltage in millivolts
+  - Labels: adapter_id, battery_type, controller
+
+### Battery Maintenance
+
+- **`raid_battery_learn_cycle_active`**: Battery learn cycle active indicator
+  - Values: `0` (not active), `1` (active)
+  - Labels: adapter_id, battery_type, controller
+
+- **`raid_battery_auto_learn_period_days`**: Battery auto learn period in days
+  - Labels: adapter_id, battery_type, controller
+
 ## Tool Availability Metrics
 
 - **`disk_monitoring_tool_available`**: Whether a disk monitoring tool is available
@@ -177,6 +238,13 @@ This document provides a comprehensive reference for all metrics exported by the
 - `2`: Degraded/Recovering
 - `3`: Failed/Inactive
 
+### RAID Battery Status
+
+- `0`: Unknown status
+- `1`: Optimal/Charging
+- `2`: Warning/Discharging/Low
+- `3`: Critical/Failed/Missing
+
 ## Label Descriptions
 
 ### Common Labels
@@ -193,6 +261,8 @@ This document provides a comprehensive reference for all metrics exported by the
 - **raid_level**: RAID level (raid0, raid1, raid5, etc.)
 - **state**: Current array state (Optimal, Degraded, Failed, etc.)
 - **controller**: RAID controller type (MegaCLI, StorCLI, mdadm, etc.)
+- **adapter_id**: RAID controller adapter identifier
+- **battery_type**: Battery type (e.g., CVPM02, iBBU, etc.)
 
 ### Error-Specific Labels
 

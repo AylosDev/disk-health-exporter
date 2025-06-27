@@ -507,3 +507,10 @@ curl -s http://localhost:9100/metrics | grep disk_health_status
 - Validate memory usage patterns
 - Ensure reasonable collection times
 - Test concurrent access patterns
+
+## References
+
+- [megacli](https://docs.broadcom.com/docs/12352815)
+- [smartctl](https://www.smartmontools.org/)
+- [Prometheus Go Client](https://github.com/prometheus/client_golang/tree/main/examples)
+- [Megacli usful commands](https://gist.github.com/dubcl/ee3c85d561cc39cc4096276b728b1502)

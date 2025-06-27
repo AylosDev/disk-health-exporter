@@ -1,0 +1,270 @@
+groups:
+- name: disk_health_critical
+  rules:
+  - alert: DiskHealthCritical
+    expr: disk_health_status == 3
+    for: 0m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Disk {{ $labels.device }} is in critical state"
+      description: "Disk {{ $labels.device }} ({{ $labels.model }}, SN: {{ $labels.serial }}) has failed or is critically degraded. Immediate replacement required."
+
+  - alert: DiskHealthWarning
+    expr: disk_health_status == 2
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Disk {{ $labels.device }} showing warning signs"
+      description: "Disk {{ $labels.device }} ({{ $labels.model }}, SN: {{ $labels.serial }}) is showing early warning signs of potential failure."
+
+  - alert: DiskHealthUnknown
+    expr: disk_health_status == 0
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Cannot determine health of disk {{ $labels.device }}"
+      description: "Unable to determine health status of disk {{ $labels.device }}. Check monitoring tools availability."
+- name: disk_smart_alerts
+  rules:
+  - alert: DiskSmartUnhealthy
+    expr: disk_smart_healthy == 0
+    for: 0m
+    labels:
+      severity: critical
+    annotations:
+      summary: "SMART reports disk {{ $labels.device }} as unhealthy"
+      description: "SMART overall health assessment failed for {{ $labels.device }}. Drive replacement recommended."
+
+  - alert: DiskSmartDisabled
+    expr: disk_smart_enabled == 0
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "SMART monitoring disabled on {{ $labels.device }}"
+      description: "SMART monitoring is disabled on disk {{ $labels.device }}. Enable SMART for health monitoring."
+- name: disk_sector_errors
+  rules:
+  - alert: DiskReallocatedSectors
+    expr: disk_reallocated_sectors_total > 0
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Reallocated sectors detected on {{ $labels.device }}"
+      description: "Disk {{ $labels.device }} has {{ $value }} reallocated sectors. Monitor for increasing trend."
+
+  - alert: DiskReallocatedSectorsCritical
+    expr: disk_reallocated_sectors_total > 10
+    for: 0m
+    labels:
+      severity: critical
+    annotations:
+      summary: "High number of reallocated sectors on {{ $labels.device }}"
+      description: "Disk {{ $labels.device }} has {{ $value }} reallocated sectors. Drive replacement strongly recommended."
+
+  - alert: DiskPendingSectors
+    expr: disk_pending_sectors_total > 0
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Pending sectors detected on {{ $labels.device }}"
+      description: "Disk {{ $labels.device }} has {{ $value }} pending sectors waiting for reallocation."
+
+  - alert: DiskUncorrectableErrors
+    expr: disk_uncorrectable_errors_total > 0
+    for: 0m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Uncorrectable errors on {{ $labels.device }}"
+      description: "Disk {{ $labels.device }} has {{ $value }} uncorrectable errors. Data loss possible - replace immediately."
+- name: disk_ssd_endurance
+  rules:
+  - alert: SSDPercentageUsedHigh
+    expr: disk_percentage_used > 80
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "SSD {{ $labels.device }} endurance is {{ $value }}% used"
+      description: "NVMe drive {{ $labels.device }} has used {{ $value }}% of its rated endurance. Plan for replacement."
+
+  - alert: SSDPercentageUsedCritical
+    expr: disk_percentage_used > 95
+    for: 0m
+    labels:
+      severity: critical
+    annotations:
+      summary: "SSD {{ $labels.device }} endurance critically high at {{ $value }}%"
+      description: "NVMe drive {{ $labels.device }} has used {{ $value }}% of its rated endurance. Immediate replacement required."
+
+  - alert: SSDAvailableSparelow
+    expr: disk_available_spare_percentage < 10
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Low available spare on SSD {{ $labels.device }}"
+      description: "NVMe drive {{ $labels.device }} has only {{ $value }}% available spare blocks remaining."
+
+  - alert: SSDCriticalWarning
+    expr: disk_critical_warning > 0
+    for: 0m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Critical warning flags set on {{ $labels.device }}"
+      description: "NVMe drive {{ $labels.device }} has critical warning flags set: {{ $value }}. Check drive status immediately."
+- name: disk_temperature
+  rules:
+  - alert: DiskTemperatureHigh
+    expr: disk_temperature_celsius > 55
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High temperature on disk {{ $labels.device }}"
+      description: "Disk {{ $labels.device }} temperature is {{ $value }}°C. Check cooling and ventilation."
+
+  - alert: DiskTemperatureCritical
+    expr: disk_temperature_celsius > 65
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Critical temperature on disk {{ $labels.device }}"
+      description: "Disk {{ $labels.device }} temperature is {{ $value }}°C. Risk of thermal damage - check cooling immediately."
+- name: raid_health_alerts
+  rules:
+  - alert: RaidArrayDegraded
+    expr: raid_array_status == 2
+    for: 0m
+    labels:
+      severity: critical
+    annotations:
+      summary: "RAID array {{ $labels.array_id }} is degraded"
+      description: "RAID {{ $labels.raid_level }} array {{ $labels.array_id }} is in degraded state. Check for failed drives."
+
+  - alert: RaidArrayFailed
+    expr: raid_array_status == 3
+    for: 0m
+    labels:
+      severity: critical
+    annotations:
+      summary: "RAID array {{ $labels.array_id }} has failed"
+      description: "RAID {{ $labels.raid_level }} array {{ $labels.array_id }} has failed completely. Data loss possible."
+
+  - alert: RaidRebuildInProgress
+    expr: raid_array_rebuild_progress > 0 and raid_array_rebuild_progress < 100
+    for: 0m
+    labels:
+      severity: info
+    annotations:
+      summary: "RAID array {{ $labels.array_id }} rebuild in progress"
+      description: "RAID array {{ $labels.array_id }} rebuild is {{ $value }}% complete."
+- name: raid_health_alerts
+  rules:
+  - alert: RaidArrayDegraded
+    expr: raid_array_status == 2
+    for: 0m
+    labels:
+      severity: critical
+    annotations:
+      summary: "RAID array {{ $labels.array_id }} is degraded"
+      description: "RAID {{ $labels.raid_level }} array {{ $labels.array_id }} is in degraded state. Check for failed drives."
+
+  - alert: RaidArrayFailed
+    expr: raid_array_status == 3
+    for: 0m
+    labels:
+      severity: critical
+    annotations:
+      summary: "RAID array {{ $labels.array_id }} has failed"
+      description: "RAID {{ $labels.raid_level }} array {{ $labels.array_id }} has failed completely. Data loss possible."
+
+  - alert: RaidRebuildInProgress
+    expr: raid_array_rebuild_progress > 0 and raid_array_rebuild_progress < 100
+    for: 0m
+    labels:
+      severity: info
+    annotations:
+      summary: "RAID array {{ $labels.array_id }} rebuild in progress"
+      description: "RAID array {{ $labels.array_id }} rebuild is {{ $value }}% complete."
+- name: raid_battery_alerts
+  rules:
+  - alert: RaidBatteryMissing
+    expr: raid_battery_missing == 1
+    for: 0m
+    labels:
+      severity: critical
+    annotations:
+      summary: "RAID controller {{ $labels.adapter_id }} battery is missing"
+      description: "RAID controller {{ $labels.adapter_id }} battery pack is missing. System vulnerable to data loss during power failures."
+
+  - alert: RaidBatteryReplacementRequired
+    expr: raid_battery_replacement_required == 1
+    for: 0m
+    labels:
+      severity: critical
+    annotations:
+      summary: "RAID controller {{ $labels.adapter_id }} battery requires replacement"
+      description: "RAID controller {{ $labels.adapter_id }} battery ({{ $labels.battery_type }}) requires replacement. Replace immediately to maintain data protection."
+
+  - alert: RaidBatteryCapacityLow
+    expr: raid_battery_capacity_low == 1
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "RAID controller {{ $labels.adapter_id }} battery capacity is low"
+      description: "RAID controller {{ $labels.adapter_id }} battery ({{ $labels.battery_type }}) has low remaining capacity. Monitor closely and consider replacement."
+
+  - alert: RaidBatteryStatusCritical
+    expr: raid_battery_status == 3
+    for: 0m
+    labels:
+      severity: critical
+    annotations:
+      summary: "RAID controller {{ $labels.adapter_id }} battery status is critical"
+      description: "RAID controller {{ $labels.adapter_id }} battery ({{ $labels.battery_type }}) is in critical state: {{ $labels.state }}. Immediate attention required."
+
+  - alert: RaidBatteryStatusWarning
+    expr: raid_battery_status == 2
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "RAID controller {{ $labels.adapter_id }} battery status warning"
+      description: "RAID controller {{ $labels.adapter_id }} battery ({{ $labels.battery_type }}) status: {{ $labels.state }}. Monitor battery health."
+
+  - alert: RaidBatteryTemperatureHigh
+    expr: raid_battery_temperature_celsius > 50
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "RAID controller {{ $labels.adapter_id }} battery temperature high"
+      description: "RAID controller {{ $labels.adapter_id }} battery ({{ $labels.battery_type }}) temperature is {{ $value }}°C. Normal operating temperature exceeded."
+
+  - alert: RaidBatteryVoltageAbnormal
+    expr: raid_battery_voltage_millivolts < (raid_battery_design_voltage_millivolts * 0.8) or raid_battery_voltage_millivolts > (raid_battery_design_voltage_millivolts * 1.2)
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "RAID controller {{ $labels.adapter_id }} battery voltage abnormal"
+      description: "RAID controller {{ $labels.adapter_id }} battery ({{ $labels.battery_type }}) voltage {{ $value }}mV is outside normal range. Expected around {{ $labels.design_voltage }}mV."
+
+  - alert: RaidBatteryLearnCycleActive
+    expr: raid_battery_learn_cycle_active == 1
+    for: 0m
+    labels:
+      severity: info
+    annotations:
+      summary: "RAID controller {{ $labels.adapter_id }} battery learn cycle active"
+      description: "RAID controller {{ $labels.adapter_id }} battery ({{ $labels.battery_type }}) learn cycle is active. Battery calibration in progress."

@@ -49,16 +49,17 @@ type RAIDInfo struct {
 	RaidLevel       string
 	State           string
 	Status          int
-	Size            int64  // Array size in bytes
-	UsedSize        int64  // Used space in bytes
-	NumDrives       int    // Number of drives in array
-	NumActiveDrives int    // Number of active drives
-	NumSpareDrives  int    // Number of spare drives
-	NumFailedDrives int    // Number of failed drives
-	RebuildProgress int    // Rebuild progress percentage (0-100)
-	ScrubProgress   int    // Scrub progress percentage (0-100)
-	Type            string // "hardware", "software", "zfs", etc.
-	Controller      string // Controller model/name
+	Size            int64            // Array size in bytes
+	UsedSize        int64            // Used space in bytes
+	NumDrives       int              // Number of drives in array
+	NumActiveDrives int              // Number of active drives
+	NumSpareDrives  int              // Number of spare drives
+	NumFailedDrives int              // Number of failed drives
+	RebuildProgress int              // Rebuild progress percentage (0-100)
+	ScrubProgress   int              // Scrub progress percentage (0-100)
+	Type            string           // "hardware", "software", "zfs", etc.
+	Controller      string           // Controller model/name
+	Battery         *RAIDBatteryInfo // Battery information (if available)
 }
 
 // SmartCtlOutput represents smartctl JSON output structure
@@ -190,4 +191,35 @@ type SoftwareRAIDInfo struct {
 	SyncProgress  float64  // Sync progress percentage
 	Bitmap        string   // Bitmap information
 	UUID          string   // Array UUID
+}
+
+// RAIDBatteryInfo represents RAID controller battery information
+type RAIDBatteryInfo struct {
+	AdapterID            int    // Adapter ID
+	BatteryType          string // Battery type (e.g., CVPM02)
+	Voltage              int    // Voltage in mV
+	Current              int    // Current in mA
+	Temperature          int    // Temperature in Celsius
+	State                string // Battery state (Optimal, Warning, Critical, etc.)
+	ChargingStatus       string // Charging status
+	VoltageStatus        string // Voltage status (OK, Warning, etc.)
+	TemperatureStatus    string // Temperature status
+	LearnCycleActive     bool   // Learn cycle active
+	LearnCycleStatus     string // Learn cycle status
+	BatteryMissing       bool   // Battery pack missing
+	ReplacementRequired  bool   // Battery replacement required
+	RemainingCapacityLow bool   // Remaining capacity low
+	PackEnergy           int    // Pack energy in Joules
+	Capacitance          int    // Capacitance
+	BackupChargeTime     int    // Battery backup charge time in hours
+	ManufactureDate      string // Date of manufacture
+	DesignCapacity       int    // Design capacity in Joules
+	DesignVoltage        int    // Design voltage in mV
+	SerialNumber         string // Serial number
+	ManufactureName      string // Manufacturer name
+	FirmwareVersion      string // Firmware version
+	DeviceName           string // Device name
+	DeviceChemistry      string // Device chemistry
+	AutoLearnPeriod      int    // Auto learn period in days
+	NextLearnTime        string // Next learn time
 }

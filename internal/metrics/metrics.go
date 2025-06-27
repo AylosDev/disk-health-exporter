@@ -50,6 +50,22 @@ type Metrics struct {
 	SoftwareRaidSyncProgress *prometheus.GaugeVec
 	SoftwareRaidArraySize    *prometheus.GaugeVec
 
+	// RAID Battery metrics
+	RaidBatteryVoltage          *prometheus.GaugeVec
+	RaidBatteryCurrent          *prometheus.GaugeVec
+	RaidBatteryTemperature      *prometheus.GaugeVec
+	RaidBatteryStatus           *prometheus.GaugeVec
+	RaidBatteryLearnCycleActive *prometheus.GaugeVec
+	RaidBatteryMissing          *prometheus.GaugeVec
+	RaidBatteryReplacementReq   *prometheus.GaugeVec
+	RaidBatteryCapacityLow      *prometheus.GaugeVec
+	RaidBatteryPackEnergy       *prometheus.GaugeVec
+	RaidBatteryCapacitance      *prometheus.GaugeVec
+	RaidBatteryBackupChargeTime *prometheus.GaugeVec
+	RaidBatteryDesignCapacity   *prometheus.GaugeVec
+	RaidBatteryDesignVoltage    *prometheus.GaugeVec
+	RaidBatteryAutoLearnPeriod  *prometheus.GaugeVec
+
 	// Tool availability metrics
 	ToolAvailable *prometheus.GaugeVec
 }
@@ -304,6 +320,106 @@ func New() *Metrics {
 			[]string{"device", "level"},
 		),
 
+		// RAID Battery metrics
+		RaidBatteryVoltage: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "raid_battery_voltage_millivolts",
+				Help: "RAID controller battery voltage in millivolts",
+			},
+			[]string{"adapter_id", "battery_type", "controller"},
+		),
+		RaidBatteryCurrent: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "raid_battery_current_milliamps",
+				Help: "RAID controller battery current in milliamps",
+			},
+			[]string{"adapter_id", "battery_type", "controller"},
+		),
+		RaidBatteryTemperature: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "raid_battery_temperature_celsius",
+				Help: "RAID controller battery temperature in Celsius",
+			},
+			[]string{"adapter_id", "battery_type", "controller"},
+		),
+		RaidBatteryStatus: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "raid_battery_status",
+				Help: "RAID controller battery status (0=unknown, 1=optimal, 2=warning, 3=critical)",
+			},
+			[]string{"adapter_id", "battery_type", "state", "controller"},
+		),
+		RaidBatteryLearnCycleActive: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "raid_battery_learn_cycle_active",
+				Help: "RAID controller battery learn cycle active (0=no, 1=yes)",
+			},
+			[]string{"adapter_id", "battery_type", "controller"},
+		),
+		RaidBatteryMissing: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "raid_battery_missing",
+				Help: "RAID controller battery missing (0=no, 1=yes)",
+			},
+			[]string{"adapter_id", "battery_type", "controller"},
+		),
+		RaidBatteryReplacementReq: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "raid_battery_replacement_required",
+				Help: "RAID controller battery replacement required (0=no, 1=yes)",
+			},
+			[]string{"adapter_id", "battery_type", "controller"},
+		),
+		RaidBatteryCapacityLow: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "raid_battery_capacity_low",
+				Help: "RAID controller battery remaining capacity low (0=no, 1=yes)",
+			},
+			[]string{"adapter_id", "battery_type", "controller"},
+		),
+		RaidBatteryPackEnergy: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "raid_battery_pack_energy_joules",
+				Help: "RAID controller battery pack energy in joules",
+			},
+			[]string{"adapter_id", "battery_type", "controller"},
+		),
+		RaidBatteryCapacitance: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "raid_battery_capacitance",
+				Help: "RAID controller battery capacitance",
+			},
+			[]string{"adapter_id", "battery_type", "controller"},
+		),
+		RaidBatteryBackupChargeTime: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "raid_battery_backup_charge_time_hours",
+				Help: "RAID controller battery backup charge time in hours",
+			},
+			[]string{"adapter_id", "battery_type", "controller"},
+		),
+		RaidBatteryDesignCapacity: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "raid_battery_design_capacity_joules",
+				Help: "RAID controller battery design capacity in joules",
+			},
+			[]string{"adapter_id", "battery_type", "controller"},
+		),
+		RaidBatteryDesignVoltage: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "raid_battery_design_voltage_millivolts",
+				Help: "RAID controller battery design voltage in millivolts",
+			},
+			[]string{"adapter_id", "battery_type", "controller"},
+		),
+		RaidBatteryAutoLearnPeriod: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "raid_battery_auto_learn_period_days",
+				Help: "RAID controller battery auto learn period in days",
+			},
+			[]string{"adapter_id", "battery_type", "controller"},
+		),
+
 		// Tool availability metrics
 		ToolAvailable: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -360,6 +476,22 @@ func New() *Metrics {
 		m.SoftwareRaidSyncProgress,
 		m.SoftwareRaidArraySize,
 
+		// RAID Battery metrics
+		m.RaidBatteryVoltage,
+		m.RaidBatteryCurrent,
+		m.RaidBatteryTemperature,
+		m.RaidBatteryStatus,
+		m.RaidBatteryLearnCycleActive,
+		m.RaidBatteryMissing,
+		m.RaidBatteryReplacementReq,
+		m.RaidBatteryCapacityLow,
+		m.RaidBatteryPackEnergy,
+		m.RaidBatteryCapacitance,
+		m.RaidBatteryBackupChargeTime,
+		m.RaidBatteryDesignCapacity,
+		m.RaidBatteryDesignVoltage,
+		m.RaidBatteryAutoLearnPeriod,
+
 		// Tool availability metrics
 		m.ToolAvailable,
 	)
@@ -411,6 +543,22 @@ func (m *Metrics) Reset() {
 	m.SoftwareRaidArrayStatus.Reset()
 	m.SoftwareRaidSyncProgress.Reset()
 	m.SoftwareRaidArraySize.Reset()
+
+	// RAID Battery metrics
+	m.RaidBatteryVoltage.Reset()
+	m.RaidBatteryCurrent.Reset()
+	m.RaidBatteryTemperature.Reset()
+	m.RaidBatteryStatus.Reset()
+	m.RaidBatteryLearnCycleActive.Reset()
+	m.RaidBatteryMissing.Reset()
+	m.RaidBatteryReplacementReq.Reset()
+	m.RaidBatteryCapacityLow.Reset()
+	m.RaidBatteryPackEnergy.Reset()
+	m.RaidBatteryCapacitance.Reset()
+	m.RaidBatteryBackupChargeTime.Reset()
+	m.RaidBatteryDesignCapacity.Reset()
+	m.RaidBatteryDesignVoltage.Reset()
+	m.RaidBatteryAutoLearnPeriod.Reset()
 
 	// Note: We don't reset ToolAvailable as tools don't change during runtime
 }

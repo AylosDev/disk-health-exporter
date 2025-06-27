@@ -113,11 +113,19 @@ func (m *Manager) checkMegaCLI() []types.RAIDInfo {
 	// Parse RAID array information
 	lines := strings.Split(string(output), "\n")
 	var currentArray types.RAIDInfo
+	var adapterID string
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 
-		if strings.Contains(line, "Virtual Drive:") {
+		if strings.Contains(line, "Adapter") && strings.Contains(line, ":") {
+			// Extract adapter ID for battery info
+			re := regexp.MustCompile(`Adapter (\d+):`)
+			matches := re.FindStringSubmatch(line)
+			if len(matches) > 1 {
+				adapterID = matches[1]
+			}
+		} else if strings.Contains(line, "Virtual Drive:") {
 			// Extract array ID
 			re := regexp.MustCompile(`Virtual Drive: (\d+)`)
 			matches := re.FindStringSubmatch(line)
@@ -168,6 +176,11 @@ func (m *Manager) checkMegaCLI() []types.RAIDInfo {
 				currentArray.Status = getRaidStatusValue(state)
 				currentArray.Type = "hardware"
 				currentArray.Controller = "MegaCLI"
+
+				// Get battery information for this adapter
+				if adapterID != "" {
+					currentArray.Battery = m.getMegaCLIBatteryInfo(adapterID)
+				}
 
 				if currentArray.ArrayID != "" {
 					raidArrays = append(raidArrays, currentArray)
@@ -598,4 +611,248 @@ func parseSizeToBytes(sizeStr string) int64 {
 	}
 
 	return int64(value * multiplier)
+}
+
+// getMegaCLIBatteryInfo gets battery information from MegaCLI
+func (m *Manager) getMegaCLIBatteryInfo(adapterID string) *types.RAIDBatteryInfo {
+	// Check if megacli is available
+	if !commandExists("megacli") && !commandExists("MegaCli64") {
+		return nil
+	}
+
+	cmd := "megacli"
+	if commandExists("MegaCli64") {
+		cmd = "MegaCli64"
+	}
+
+	// Get battery information
+	output, err := exec.Command(cmd, "-AdpBbuCmd", "-a"+adapterID).Output()
+	if err != nil {
+		log.Printf("Error executing MegaCLI for battery info: %v", err)
+		return nil
+	}
+
+	// Parse battery information
+	lines := strings.Split(string(output), "\n")
+	batteryInfo := &types.RAIDBatteryInfo{}
+
+	// Parse adapter ID
+	if id, err := strconv.Atoi(adapterID); err == nil {
+		batteryInfo.AdapterID = id
+	}
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		if strings.Contains(line, "BatteryType:") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				batteryInfo.BatteryType = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "Voltage:") && !strings.Contains(line, "Design Voltage") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				voltageStr := strings.TrimSpace(parts[1])
+				// Extract voltage value (e.g., "9481 mV" -> 9481)
+				re := regexp.MustCompile(`(\d+)\s*mV`)
+				matches := re.FindStringSubmatch(voltageStr)
+				if len(matches) > 1 {
+					if voltage, err := strconv.Atoi(matches[1]); err == nil {
+						batteryInfo.Voltage = voltage
+					}
+				}
+			}
+		} else if strings.Contains(line, "Current:") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				currentStr := strings.TrimSpace(parts[1])
+				// Extract current value (e.g., "0 mA" -> 0)
+				re := regexp.MustCompile(`(\d+)\s*mA`)
+				matches := re.FindStringSubmatch(currentStr)
+				if len(matches) > 1 {
+					if current, err := strconv.Atoi(matches[1]); err == nil {
+						batteryInfo.Current = current
+					}
+				}
+			}
+		} else if strings.Contains(line, "Temperature:") && !strings.Contains(line, "Temperature                             :") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				tempStr := strings.TrimSpace(parts[1])
+				// Extract temperature value (e.g., "35 C" -> 35)
+				re := regexp.MustCompile(`(\d+)\s*C`)
+				matches := re.FindStringSubmatch(tempStr)
+				if len(matches) > 1 {
+					if temp, err := strconv.Atoi(matches[1]); err == nil {
+						batteryInfo.Temperature = temp
+					}
+				}
+			}
+		} else if strings.Contains(line, "Battery State:") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				batteryInfo.State = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "Charging Status") && strings.Contains(line, ":") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				batteryInfo.ChargingStatus = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "Voltage                                 :") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				batteryInfo.VoltageStatus = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "Temperature                             :") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				batteryInfo.TemperatureStatus = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "Learn Cycle Active") && strings.Contains(line, ":") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				status := strings.TrimSpace(parts[1])
+				batteryInfo.LearnCycleActive = strings.ToLower(status) == "yes"
+			}
+		} else if strings.Contains(line, "Learn Cycle Status") && strings.Contains(line, ":") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				batteryInfo.LearnCycleStatus = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "Battery Pack Missing") && strings.Contains(line, ":") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				status := strings.TrimSpace(parts[1])
+				batteryInfo.BatteryMissing = strings.ToLower(status) == "yes"
+			}
+		} else if strings.Contains(line, "Battery Replacement required") && strings.Contains(line, ":") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				status := strings.TrimSpace(parts[1])
+				batteryInfo.ReplacementRequired = strings.ToLower(status) == "yes"
+			}
+		} else if strings.Contains(line, "Remaining Capacity Low") && strings.Contains(line, ":") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				status := strings.TrimSpace(parts[1])
+				batteryInfo.RemainingCapacityLow = strings.ToLower(status) == "yes"
+			}
+		} else if strings.Contains(line, "Pack energy") && strings.Contains(line, ":") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				energyStr := strings.TrimSpace(parts[1])
+				// Extract energy value (e.g., "233 J" -> 233)
+				re := regexp.MustCompile(`(\d+)\s*J`)
+				matches := re.FindStringSubmatch(energyStr)
+				if len(matches) > 1 {
+					if energy, err := strconv.Atoi(matches[1]); err == nil {
+						batteryInfo.PackEnergy = energy
+					}
+				}
+			}
+		} else if strings.Contains(line, "Capacitance") && strings.Contains(line, ":") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				capacitanceStr := strings.TrimSpace(parts[1])
+				if capacitance, err := strconv.Atoi(capacitanceStr); err == nil {
+					batteryInfo.Capacitance = capacitance
+				}
+			}
+		} else if strings.Contains(line, "Battery backup charge time") && strings.Contains(line, ":") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				timeStr := strings.TrimSpace(parts[1])
+				// Extract hours (e.g., "0 hours" -> 0)
+				re := regexp.MustCompile(`(\d+)\s*hours`)
+				matches := re.FindStringSubmatch(timeStr)
+				if len(matches) > 1 {
+					if hours, err := strconv.Atoi(matches[1]); err == nil {
+						batteryInfo.BackupChargeTime = hours
+					}
+				}
+			}
+		} else if strings.Contains(line, "Date of Manufacture:") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				batteryInfo.ManufactureDate = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "Design Capacity:") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				capacityStr := strings.TrimSpace(parts[1])
+				// Extract capacity value (e.g., "288 J" -> 288)
+				re := regexp.MustCompile(`(\d+)\s*J`)
+				matches := re.FindStringSubmatch(capacityStr)
+				if len(matches) > 1 {
+					if capacity, err := strconv.Atoi(matches[1]); err == nil {
+						batteryInfo.DesignCapacity = capacity
+					}
+				}
+			}
+		} else if strings.Contains(line, "Design Voltage:") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				voltageStr := strings.TrimSpace(parts[1])
+				// Extract voltage value (e.g., "9500 mV" -> 9500)
+				re := regexp.MustCompile(`(\d+)\s*mV`)
+				matches := re.FindStringSubmatch(voltageStr)
+				if len(matches) > 1 {
+					if voltage, err := strconv.Atoi(matches[1]); err == nil {
+						batteryInfo.DesignVoltage = voltage
+					}
+				}
+			}
+		} else if strings.Contains(line, "Serial Number:") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				batteryInfo.SerialNumber = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "Manufacture Name:") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				batteryInfo.ManufactureName = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "Firmware Version") && strings.Contains(line, ":") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				batteryInfo.FirmwareVersion = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "Device Name:") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				batteryInfo.DeviceName = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "Device Chemistry:") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				batteryInfo.DeviceChemistry = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "Auto Learn Period:") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				periodStr := strings.TrimSpace(parts[1])
+				// Extract days (e.g., "27 Days" -> 27)
+				re := regexp.MustCompile(`(\d+)\s*Days`)
+				matches := re.FindStringSubmatch(periodStr)
+				if len(matches) > 1 {
+					if days, err := strconv.Atoi(matches[1]); err == nil {
+						batteryInfo.AutoLearnPeriod = days
+					}
+				}
+			}
+		} else if strings.Contains(line, "Next Learn time:") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				// Join the rest as it contains the full datetime
+				batteryInfo.NextLearnTime = strings.TrimSpace(strings.Join(parts[1:], ":"))
+			}
+		}
+	}
+
+	// Only return battery info if we found meaningful data
+	if batteryInfo.BatteryType == "" && batteryInfo.State == "" {
+		return nil
+	}
+
+	return batteryInfo
 }

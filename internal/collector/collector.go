@@ -3,6 +3,8 @@ package collector
 import (
 	"log"
 	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	"disk-health-exporter/internal/config"
@@ -179,6 +181,11 @@ func (c *Collector) collectLinuxMetrics() {
 				raid.RaidLevel,
 				raid.Type,
 			).Set(float64(raid.ScrubProgress))
+		}
+
+		// Update battery metrics if available
+		if raid.Battery != nil {
+			c.updateRaidBatteryMetrics(raid.Battery)
 		}
 	}
 
@@ -406,6 +413,86 @@ func (c *Collector) updateComprehensiveDiskMetrics(disks []types.DiskInfo) {
 				disk.Model,
 			).Set(float64(disk.ErrorLogEntries))
 		}
+	}
+}
+
+// updateRaidBatteryMetrics updates battery metrics for a RAID controller
+func (c *Collector) updateRaidBatteryMetrics(battery *types.RAIDBatteryInfo) {
+	adapterIdStr := strconv.Itoa(battery.AdapterID)
+	labels := []string{adapterIdStr, battery.BatteryType, "MegaCLI"}
+
+	// Basic battery measurements
+	if battery.Voltage > 0 {
+		c.metrics.RaidBatteryVoltage.WithLabelValues(labels...).Set(float64(battery.Voltage))
+	}
+
+	if battery.Current >= 0 {
+		c.metrics.RaidBatteryCurrent.WithLabelValues(labels...).Set(float64(battery.Current))
+	}
+
+	if battery.Temperature > 0 {
+		c.metrics.RaidBatteryTemperature.WithLabelValues(labels...).Set(float64(battery.Temperature))
+	}
+
+	// Battery status as numeric value
+	statusValue := getBatteryStatusValue(battery.State)
+	statusLabels := []string{adapterIdStr, battery.BatteryType, battery.State, "MegaCLI"}
+	c.metrics.RaidBatteryStatus.WithLabelValues(statusLabels...).Set(float64(statusValue))
+
+	// Boolean indicators converted to 0/1
+	c.metrics.RaidBatteryLearnCycleActive.WithLabelValues(labels...).Set(boolToFloat(battery.LearnCycleActive))
+	c.metrics.RaidBatteryMissing.WithLabelValues(labels...).Set(boolToFloat(battery.BatteryMissing))
+	c.metrics.RaidBatteryReplacementReq.WithLabelValues(labels...).Set(boolToFloat(battery.ReplacementRequired))
+	c.metrics.RaidBatteryCapacityLow.WithLabelValues(labels...).Set(boolToFloat(battery.RemainingCapacityLow))
+
+	// Energy and capacity metrics
+	if battery.PackEnergy > 0 {
+		c.metrics.RaidBatteryPackEnergy.WithLabelValues(labels...).Set(float64(battery.PackEnergy))
+	}
+
+	if battery.Capacitance > 0 {
+		c.metrics.RaidBatteryCapacitance.WithLabelValues(labels...).Set(float64(battery.Capacitance))
+	}
+
+	if battery.BackupChargeTime >= 0 {
+		c.metrics.RaidBatteryBackupChargeTime.WithLabelValues(labels...).Set(float64(battery.BackupChargeTime))
+	}
+
+	// Design specifications
+	if battery.DesignCapacity > 0 {
+		c.metrics.RaidBatteryDesignCapacity.WithLabelValues(labels...).Set(float64(battery.DesignCapacity))
+	}
+
+	if battery.DesignVoltage > 0 {
+		c.metrics.RaidBatteryDesignVoltage.WithLabelValues(labels...).Set(float64(battery.DesignVoltage))
+	}
+
+	if battery.AutoLearnPeriod > 0 {
+		c.metrics.RaidBatteryAutoLearnPeriod.WithLabelValues(labels...).Set(float64(battery.AutoLearnPeriod))
+	}
+}
+
+// getBatteryStatusValue converts battery status string to numeric value
+func getBatteryStatusValue(status string) int {
+	switch strings.ToLower(status) {
+	case "optimal":
+		return 1
+	case "charging":
+		return 1
+	case "discharging":
+		return 2
+	case "warning":
+		return 2
+	case "low":
+		return 2
+	case "critical":
+		return 3
+	case "failed":
+		return 3
+	case "missing":
+		return 3
+	default:
+		return 0 // unknown
 	}
 }
 

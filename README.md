@@ -172,6 +172,7 @@ For backwards compatibility, environment variables are used as fallback values:
 - **30+ Comprehensive Metrics**: Health status, temperature, errors, wear leveling, I/O stats
 - **Multi-Tool Support**: smartctl, MegaCLI, StorCLI, Arcconf, mdadm, NVMe CLI
 - **Hardware & Software RAID**: Complete RAID monitoring with rebuild progress
+- **RAID Battery Monitoring**: Comprehensive BBU (Backup Battery Unit) monitoring with voltage, temperature, capacity, and maintenance status
 - **SSD/NVMe Specific**: Endurance monitoring, wear leveling, critical warnings
 - **Disk Filtering**: Target specific disks or use automatic filtering for loop/virtual devices
 - **Tool Detection**: Automatic detection and graceful degradation
@@ -198,6 +199,14 @@ disk_temperature_celsius{device="/dev/sda",interface="SATA"} 35
 
 # NVMe endurance
 disk_percentage_used{device="/dev/nvme0n1"} 15
+
+# RAID array status
+raid_array_status{array_id="0",raid_level="RAID 5",state="Optimal",type="hardware",controller="MegaCLI"} 1
+
+# RAID battery monitoring
+raid_battery_status{adapter_id="0",battery_type="CVPM02",state="Optimal",controller="MegaCLI"} 1
+raid_battery_voltage_millivolts{adapter_id="0",battery_type="CVPM02",controller="MegaCLI"} 9481
+raid_battery_temperature_celsius{adapter_id="0",battery_type="CVPM02",controller="MegaCLI"} 35
 
 # RAID array status
 raid_array_status{array_id="0",type="hardware",controller="MegaCLI"} 1
