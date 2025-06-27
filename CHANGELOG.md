@@ -19,6 +19,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.0.6] - 2025-06-27
+
+### Added
+
+- **RAID Controller Battery Monitoring** - Comprehensive BBU (Backup Battery Unit) monitoring for hardware RAID controllers
+- **New Battery Information Structure** - `RAIDBatteryInfo` type with 20+ fields covering all aspects of battery health and status
+- **14 New Battery Metrics** for Prometheus monitoring:
+  - `raid_battery_status` - Overall battery health status (0-3)
+  - `raid_battery_voltage_millivolts` - Current voltage measurement
+  - `raid_battery_current_milliamps` - Current draw measurement
+  - `raid_battery_temperature_celsius` - Battery temperature monitoring
+  - `raid_battery_missing` - Battery missing detection
+  - `raid_battery_replacement_required` - Replacement required indicator
+  - `raid_battery_capacity_low` - Low capacity warning
+  - `raid_battery_learn_cycle_active` - Learn cycle status monitoring
+  - `raid_battery_pack_energy_joules` - Current energy level
+  - `raid_battery_capacitance` - Battery capacitance measurement
+  - `raid_battery_backup_charge_time_hours` - Available backup time
+  - `raid_battery_design_capacity_joules` - Design capacity specification
+  - `raid_battery_design_voltage_millivolts` - Design voltage specification
+  - `raid_battery_auto_learn_period_days` - Auto learn cycle scheduling
+- **MegaCLI Battery Integration** - Automatic battery information collection using `megacli -AdpBbuCmd -aAll`
+- **9 Comprehensive Alert Rules** for battery monitoring including critical alerts for missing/failed batteries and warning alerts for capacity/temperature issues
+- **Battery Demo Script** - Interactive demonstration script showing new battery monitoring capabilities
+- **Complete Documentation** - Updated metrics reference, README, and alert examples with battery monitoring information
+- **Unit Tests** - Battery parsing logic tested with real MegaCLI output samples
+
+### Changed
+
+- **Enhanced RAID Detection** - RAID array detection now includes automatic battery information collection when MegaCLI is available
+- **Updated Metrics Documentation** - Added comprehensive battery metrics documentation with label descriptions and status value references
+- **Enhanced README** - Updated feature list and sample metrics to showcase battery monitoring capabilities
+
+### Fixed
+
+- **Robust Battery Parsing** - Smart parsing with regex for extracting numeric values from MegaCLI text output
+- **Error Handling** - Proper error handling for battery data collection with graceful degradation when battery information is unavailable
+
 ## [0.0.5] - 2025-06-26
 
 ### Added
