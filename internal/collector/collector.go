@@ -418,8 +418,8 @@ func (c *Collector) updateComprehensiveDiskMetrics(disks []types.DiskInfo) {
 
 // updateRaidBatteryMetrics updates battery metrics for a RAID controller
 func (c *Collector) updateRaidBatteryMetrics(battery *types.RAIDBatteryInfo) {
-	adapterIdStr := strconv.Itoa(battery.AdapterID)
-	labels := []string{adapterIdStr, battery.BatteryType, "MegaCLI"}
+	adapterIDStr := strconv.Itoa(battery.AdapterID)
+	labels := []string{adapterIDStr, battery.BatteryType, "MegaCLI"}
 
 	// Basic battery measurements
 	if battery.Voltage > 0 {
@@ -436,7 +436,7 @@ func (c *Collector) updateRaidBatteryMetrics(battery *types.RAIDBatteryInfo) {
 
 	// Battery status as numeric value
 	statusValue := getBatteryStatusValue(battery.State)
-	statusLabels := []string{adapterIdStr, battery.BatteryType, battery.State, "MegaCLI"}
+	statusLabels := []string{adapterIDStr, battery.BatteryType, battery.State, "MegaCLI"}
 	c.metrics.RaidBatteryStatus.WithLabelValues(statusLabels...).Set(float64(statusValue))
 
 	// Boolean indicators converted to 0/1
