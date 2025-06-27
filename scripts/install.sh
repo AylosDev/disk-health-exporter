@@ -11,6 +11,7 @@ VERSION=""
 INSTALL_SERVICE=""
 BIN_DIR="/usr/local/bin"
 DOWNLOADED_BINARY=""
+SERVICE_PORT="9300"
 
 # Colors for output
 RED='\033[0;31m'
@@ -28,6 +29,7 @@ show_usage() {
   echo "Options:"
   echo "  -v, --version VERSION    Install specific version (default: latest)"
   echo "  -s, --service           Install as system service (systemd/launchd)"
+  echo "  -p, --port PORT         Set service port (default: $SERVICE_PORT)"
   echo "  -h, --help              Show this help message"
   echo ""
   echo "Examples:"
@@ -35,6 +37,7 @@ show_usage() {
   echo "  $0 -v v1.0.0          # Install specific version"
   echo "  $0 -s                  # Install latest with service"
   echo "  $0 -v v1.0.0 -s       # Install specific version with service"
+  echo "  $0 -s -p 9200         # Install with service on port 9200"
 }
 
 # Parse command line arguments
@@ -48,6 +51,10 @@ parse_args() {
     -s | --service)
       INSTALL_SERVICE="true"
       shift
+      ;;
+    -p | --port)
+      SERVICE_PORT="$2"
+      shift 2
       ;;
     -h | --help)
       show_usage
@@ -235,10 +242,10 @@ check_linux_deps() {
     echo "RAID monitoring will be limited without MegaCLI, StorCLI, Arcconf, or mdadm"
   fi
 
-  # Create prometheus user if it doesn't exist (only for service)
-  if ! id -u prometheus >/dev/null 2>&1; then
-    echo -e "${YELLOW}Creating prometheus user...${NC}"
-    sudo useradd --no-create-home --shell /bin/false prometheus
+  # Create exporter user if it doesn't exist (only for service)
+  if ! id -u exporter >/dev/null 2>&1; then
+    echo -e "${YELLOW}Creating exporter user...${NC}"
+    sudo useradd --system --no-create-home --shell /bin/false --user-group --comment "Disk Health Exporter Service User" exporter
   fi
 }
 
@@ -292,9 +299,9 @@ After=network.target
 
 [Service]
 Type=simple
-User=prometheus
-Group=prometheus
-ExecStart=${BIN_DIR}/disk-health-exporter
+User=exporter
+Group=exporter
+ExecStart=${BIN_DIR}/disk-health-exporter --port=${SERVICE_PORT}
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -319,8 +326,8 @@ EOF
   echo ""
   echo -e "${GREEN}Service installation completed successfully!${NC}"
   echo ""
-  echo "The exporter is running on port 9100"
-  echo "Metrics URL: http://localhost:9100/metrics"
+  echo "The exporter is running on port ${SERVICE_PORT}"
+  echo "Metrics URL: http://localhost:${SERVICE_PORT}/metrics"
   echo ""
   echo "To check logs: sudo journalctl -u disk-health-exporter.service -f"
   echo "To restart: sudo systemctl restart disk-health-exporter.service"
@@ -360,7 +367,7 @@ setup_macos_service() {
     <key>EnvironmentVariables</key>
     <dict>
         <key>PORT</key>
-        <string>9100</string>
+        <string>${SERVICE_PORT}</string>
     </dict>
 </dict>
 </plist>
@@ -375,7 +382,7 @@ EOF
 
   # Check if the service is running
   echo -e "${YELLOW}Checking if service is running...${NC}"
-  if curl -s http://localhost:9100/metrics >/dev/null; then
+  if curl -s http://localhost:"${SERVICE_PORT}"/metrics >/dev/null; then
     echo -e "${GREEN}Service is running successfully!${NC}"
   else
     echo -e "${YELLOW}Service might be starting up, checking logs...${NC}"
@@ -385,8 +392,8 @@ EOF
   echo ""
   echo -e "${GREEN}Service installation completed successfully!${NC}"
   echo ""
-  echo "The exporter is running on port 9100"
-  echo "Metrics URL: http://localhost:9100/metrics"
+  echo "The exporter is running on port ${SERVICE_PORT}"
+  echo "Metrics URL: http://localhost:${SERVICE_PORT}/metrics"
   echo ""
   echo "To check logs: tail -f /tmp/disk-health-exporter.log"
   echo "To restart: launchctl unload $PLIST_PATH && launchctl load $PLIST_PATH"
@@ -465,14 +472,14 @@ main() {
 
   if [[ "$INSTALL_SERVICE" == "true" ]]; then
     echo "Service: Installed and running"
-    echo "Metrics URL: http://localhost:9100/metrics"
+    echo "Metrics URL: http://localhost:${SERVICE_PORT}/metrics"
   else
     echo "Service: Not installed (use -s flag to install service)"
     echo "To run manually: ${BIN_DIR}/disk-health-exporter"
   fi
 
   echo ""
-  echo "To test: curl http://localhost:9100/metrics"
+  echo "To test: curl http://localhost:${SERVICE_PORT}/metrics"
 }
 
 # Run main function
