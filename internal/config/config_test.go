@@ -14,7 +14,7 @@ func TestConfigFromFlags(t *testing.T) {
 	// Mock command line arguments
 	os.Args = []string{"cmd", "-port", "8080", "-metrics-path", "/test-metrics", "-collect-interval", "45s", "-log-level", "debug"}
 
-	config := New()
+	config := New("test-version")
 
 	if config.Port != "8080" {
 		t.Errorf("Expected port 8080, got %s", config.Port)
@@ -59,7 +59,7 @@ func TestConfigFromEnvironmentFallback(t *testing.T) {
 	// Mock command line arguments with no flags
 	os.Args = []string{"cmd"}
 
-	config := New()
+	config := New("test-version")
 
 	if config.Port != "7070" {
 		t.Errorf("Expected port 7070 from env, got %s", config.Port)
@@ -99,7 +99,7 @@ func TestConfigDefaults(t *testing.T) {
 	// Mock command line arguments with no flags
 	os.Args = []string{"cmd"}
 
-	config := New()
+	config := New("test-version")
 
 	if config.Port != "9100" {
 		t.Errorf("Expected default port 9100, got %s", config.Port)
@@ -135,7 +135,7 @@ func TestFlagsPriorityOverEnvironment(t *testing.T) {
 	// Mock command line arguments with flags that should override env vars
 	os.Args = []string{"cmd", "-port", "6000", "-log-level", "debug"}
 
-	config := New()
+	config := New("test-version")
 
 	if config.Port != "6000" {
 		t.Errorf("Expected port 6000 from flag (not 5000 from env), got %s", config.Port)

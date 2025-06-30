@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"runtime"
 
 	"disk-health-exporter/internal/collector"
 	"disk-health-exporter/internal/config"
@@ -12,9 +13,18 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+var (
+	version   = "dev"
+	commit    = "unknown"
+	buildTime = "unknown"
+	buildBy   = "unknown"
+)
+
 func main() {
+	vrs := fmt.Sprintf("go-dev-deploys %s\nCommit %s\nBuild Time: %s\nBuild By %s\nGo Version %s\nPlatform %s/%s\n", version, commit, buildTime, buildBy, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+
 	// Load configuration
-	cfg := config.New()
+	cfg := config.New(vrs)
 
 	log.Println("Starting Disk Health Prometheus Exporter...")
 

@@ -10,6 +10,7 @@ import (
 
 // Config holds the application configuration
 type Config struct {
+	Version         string // Version of the application, set at build time
 	Port            string
 	MetricsPath     string
 	CollectInterval time.Duration
@@ -19,7 +20,7 @@ type Config struct {
 }
 
 // New creates a new configuration from command-line flags
-func New() *Config {
+func New(version string) *Config {
 	var (
 		port            = flag.String("port", getEnv("PORT", "9100"), "Port to listen on")
 		metricsPath     = flag.String("metrics-path", getEnv("METRICS_PATH", "/metrics"), "Path to expose metrics")
@@ -27,12 +28,17 @@ func New() *Config {
 		logLevel        = flag.String("log-level", getEnv("LOG_LEVEL", "info"), "Log level (debug, info, warn, error)")
 		targetDisks     = flag.String("target-disks", getEnv("TARGET_DISKS", ""), "Comma-separated list of specific disks to monitor (e.g., '/dev/sda,/dev/nvme0n1'). If empty, all detected disks are monitored.")
 		showHelp        = flag.Bool("help", false, "Show help message")
+		showVersion     = flag.Bool("version", false, "Show version information")
 	)
 
 	flag.Parse()
 
 	if *showHelp {
 		PrintUsage()
+		os.Exit(0)
+	}
+	if *showVersion {
+		PrintVersion(version)
 		os.Exit(0)
 	}
 
@@ -44,6 +50,7 @@ func New() *Config {
 	}
 
 	return &Config{
+		Version:         version,
 		Port:            *port,
 		MetricsPath:     *metricsPath,
 		CollectInterval: *collectInterval,
@@ -69,6 +76,12 @@ func PrintUsage() {
 	fmt.Printf("  %s -port 8080 -collect-interval 60s\n", os.Args[0])
 	fmt.Printf("  %s -metrics-path /health -log-level debug\n", os.Args[0])
 	fmt.Printf("  %s -target-disks '/dev/sda,/dev/nvme0n1'\n", os.Args[0])
+}
+
+// PrintVersion prints version information
+func PrintVersion(version string) {
+	fmt.Printf("Disk Health Prometheus Exporter\n")
+	fmt.Print(version)
 }
 
 // getEnv gets an environment variable with a default value

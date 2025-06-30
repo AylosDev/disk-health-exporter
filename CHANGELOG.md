@@ -19,6 +19,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.0.7] - 2025-06-30
+
+### Added
+
+- **Version flag support** - Added `-version` command-line flag to display version information
+- **Grafana Dashboard** - Comprehensive JSON dashboard template for visualizing disk health metrics
+  - Overview section with health status gauges and distribution charts
+  - Temperature monitoring with time-series graphs and threshold alerts
+  - RAID array status monitoring including rebuild/scrub progress
+  - Disk error tracking with sector error metrics and SSD/NVMe wear indicators
+  - Performance metrics showing power-on hours and disk capacity
+  - RAID battery monitoring with voltage, temperature, and status indicators
+  - System status panels for exporter health and tool availability
+  - Color-coded thresholds and responsive design
+  - Auto-refresh every 30 seconds with proper units and formatting
+
+### Changed
+
+- **Enhanced configuration system** - Version information now properly propagated from build-time variables
+- **Improved help system** - Version and help flags now exit immediately as expected
+- **Updated documentation** - Added Grafana dashboard to examples folder in docs
+
+### Fixed
+
+- **Command-line flag parsing** - Version flag now works correctly and exits after displaying information
+- **Configuration structure** - Proper version handling throughout the application lifecycle
+
 ## [0.0.6] - 2025-06-27
 
 ### Added
