@@ -19,6 +19,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.0.8] - 2025-06-30
+
+### Added
+
+- **Complete macOS disk detection** - Fully implemented `getDiskutilDisks` function for macOS systems
+  - Uses `diskutil list` and `diskutil info` to detect physical disks
+  - Parses disk information including model, capacity, interface, and vendor
+  - Correctly identifies and filters physical vs virtual disks (excludes APFS containers)
+  - Enhanced SMART data collection with macOS-compatible smartctl parameters
+  - Graceful error handling for smartctl failures common on macOS systems
+
+### Changed
+
+- **Performance optimization: Tool availability caching** - Tool detection now occurs only at startup instead of every collection cycle
+  - Linux: Cached availability for lsblk, smartctl, nvme, megacli, mdadm, arcconf, storcli, zpool, hdparm
+  - macOS: Cached availability for diskutil, smartctl, nvme, zpool  
+  - Windows: Cached availability for smartctl, nvme
+  - Eliminates 9+ system calls per collection cycle, significantly improving performance
+  - Tool availability logged once at startup with detailed detection information
+
+### Removed
+
+- **Tool availability metrics** - Removed `disk_monitoring_tool_available` metrics as they are not relevant for monitoring purposes
+  - Removed `ToolAvailable` metric from metrics system
+  - Removed `updateToolMetrics()` function from collector
+  - Cleaned up metric registration and reset operations
+  - Updated all documentation to remove references to tool availability metrics
+
+### Fixed
+
+- **macOS disk detection** - Previously empty implementation now fully functional
+  - Physical disk detection using diskutil with proper filtering logic
+  - SMART data integration when smartctl is available
+  - Proper handling of APFS containers and synthesized volumes
+  - Comprehensive disk information extraction (model, capacity, interface, vendor)
+
+### Documentation
+
+- **Updated metrics documentation** - Removed tool availability metrics section
+- **Updated usage examples** - Removed tool availability monitoring examples and alerting rules
+- **Updated installation guide** - Removed tool detection verification commands
+- **Updated README** - Removed tool availability examples from sample metrics
+- **Updated troubleshooting** - Replaced tool availability checks with general disk detection guidance
+
 ## [0.0.7] - 2025-06-30
 
 ### Added

@@ -2,6 +2,8 @@ package systems
 
 import (
 	"log"
+	"os/exec"
+	"strconv"
 	"strings"
 
 	"disk-health-exporter/internal/utils"
@@ -72,16 +74,261 @@ func (m *MacOSSystem) GetDisks() ([]types.DiskInfo, []types.RAIDInfo) {
 func (m *MacOSSystem) getDiskutilDisks() []types.DiskInfo {
 	var disks []types.DiskInfo
 
-	// TODO: Implement diskutil parsing
-	log.Println("diskutil disk detection - implementation needed")
+	// Get list of all disks using diskutil (regular format)
+	cmd := exec.Command("diskutil", "list")
+	output, err := cmd.Output()
+	if err != nil {
+		log.Printf("Error running diskutil list: %v", err)
+		return disks
+	}
+
+	// Parse the output to get disk identifiers
+	diskIdentifiers := m.parseDiskutilList(string(output))
+	log.Printf("Found %d disk identifiers from diskutil", len(diskIdentifiers))
+
+	// Get detailed information for each physical disk
+	for _, diskID := range diskIdentifiers {
+		// Skip non-physical disks (like disk images, APFS volumes, etc.)
+		if !m.isPhysicalDisk(diskID) {
+			continue
+		}
+
+		diskInfo := m.getDiskutilInfo(diskID)
+		if diskInfo.Device != "" {
+			disks = append(disks, diskInfo)
+		}
+	}
 
 	return disks
 }
 
-// getSmartInfo gets SMART information for a disk
+// parseDiskutilList parses diskutil list output to extract disk identifiers
+func (m *MacOSSystem) parseDiskutilList(output string) []string {
+	var identifiers []string
+
+	// Parse diskutil list output which has format like:
+	// /dev/disk0 (internal, physical):
+	// /dev/disk3 (synthesized):
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "/dev/disk") && strings.Contains(line, ":") {
+			// Extract disk identifier from lines like "/dev/disk0 (internal, physical):"
+			parts := strings.Fields(line)
+			if len(parts) > 0 {
+				devicePath := parts[0]
+				// Extract just the disk identifier (e.g., "disk0" from "/dev/disk0")
+				diskID := strings.TrimPrefix(devicePath, "/dev/")
+				identifiers = append(identifiers, diskID)
+			}
+		}
+	}
+
+	return identifiers
+}
+
+// isPhysicalDisk checks if the disk identifier represents a physical disk
+func (m *MacOSSystem) isPhysicalDisk(diskID string) bool {
+	// Additional check: run diskutil info to see if it's a physical disk
+	cmd := exec.Command("diskutil", "info", diskID)
+	output, err := cmd.Output()
+	if err != nil {
+		log.Printf("Error checking if %s is physical disk: %v", diskID, err)
+		return false
+	}
+
+	outputStr := string(output)
+
+	// Look for indicators that this is a physical disk
+	// Must have "Device Location: Internal" or "Device Location: External" and not be virtual
+	hasDeviceLocation := strings.Contains(outputStr, "Device Location:") &&
+		(strings.Contains(outputStr, "Internal") || strings.Contains(outputStr, "External"))
+
+	// Check if it's a real physical media
+	hasPhysicalMedia := strings.Contains(outputStr, "Media Type:") &&
+		!strings.Contains(outputStr, "Disk Image")
+
+	// Exclude virtual disks and APFS containers
+	isVirtual := strings.Contains(outputStr, "Virtual:                   Yes") ||
+		strings.Contains(outputStr, "APFS Container") ||
+		strings.Contains(outputStr, "synthesized") ||
+		strings.Contains(outputStr, "Disk Image")
+
+	result := hasDeviceLocation && hasPhysicalMedia && !isVirtual
+	return result
+}
+
+// getDiskutilInfo gets detailed information for a specific disk
+func (m *MacOSSystem) getDiskutilInfo(diskID string) types.DiskInfo {
+	disk := types.DiskInfo{
+		Device:    "/dev/" + diskID,
+		Type:      "macos-disk",
+		Interface: "Unknown",
+	}
+
+	// Run diskutil info to get detailed information
+	cmd := exec.Command("diskutil", "info", diskID)
+	output, err := cmd.Output()
+	if err != nil {
+		log.Printf("Error getting diskutil info for %s: %v", diskID, err)
+		return types.DiskInfo{}
+	}
+
+	outputStr := string(output)
+	lines := strings.Split(outputStr, "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// Parse various fields from diskutil info output
+		if strings.Contains(line, "Device / Media Name:") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				disk.Model = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "Disk Size:") {
+			// Extract capacity from "Disk Size: 500.1 GB (500107862016 Bytes)"
+			parts := strings.SplitN(line, "(", 2)
+			if len(parts) == 2 {
+				bytesStr := strings.Split(parts[1], " ")[0]
+				if capacity, err := strconv.ParseInt(bytesStr, 10, 64); err == nil {
+					disk.Capacity = capacity
+				}
+			}
+		} else if strings.Contains(line, "Protocol:") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				disk.Interface = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "Solid State:") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 && strings.TrimSpace(parts[1]) == "Yes" {
+				disk.RPM = 0 // SSD
+			}
+		} else if strings.Contains(line, "Physical Drive:") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				vendor := strings.TrimSpace(parts[1])
+				// Extract vendor from strings like "APPLE SSD SM0512F Media"
+				vendorParts := strings.Fields(vendor)
+				if len(vendorParts) > 0 {
+					disk.Vendor = vendorParts[0]
+				}
+			}
+		}
+	}
+
+	// Set default health status
+	disk.Health = "OK"
+	disk.SmartEnabled = true
+	disk.SmartHealthy = true
+
+	return disk
+}
+
+// getSmartInfo gets SMART information for a disk using smartctl
 func (m *MacOSSystem) getSmartInfo(device string) types.DiskInfo {
-	// TODO: Implement SMART info retrieval for macOS
-	return types.DiskInfo{}
+	disk := types.DiskInfo{Device: device}
+
+	// Run smartctl to get SMART data with -d auto for better macOS compatibility
+	cmd := exec.Command("smartctl", "-a", "-d", "auto", device)
+	output, err := cmd.Output()
+	if err != nil {
+		// Try without -d auto if that fails
+		cmd = exec.Command("smartctl", "-a", device)
+		output, err = cmd.Output()
+		if err != nil {
+			log.Printf("smartctl failed for %s: %v", device, err)
+			return disk
+		}
+	}
+
+	outputStr := string(output)
+	lines := strings.Split(outputStr, "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// Parse SMART data
+		if strings.Contains(line, "Model Family:") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				disk.Vendor = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "Device Model:") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				disk.Model = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "Serial Number:") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				disk.Serial = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "User Capacity:") {
+			// Extract capacity from "User Capacity: 500,107,862,016 bytes [500 GB]"
+			parts := strings.Fields(line)
+			for i, part := range parts {
+				if part == "bytes" && i > 0 {
+					capacityStr := strings.ReplaceAll(parts[i-1], ",", "")
+					if capacity, err := strconv.ParseInt(capacityStr, 10, 64); err == nil {
+						disk.Capacity = capacity
+					}
+					break
+				}
+			}
+		} else if strings.Contains(line, "Rotation Rate:") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				rpmStr := strings.TrimSpace(parts[1])
+				if strings.Contains(rpmStr, "Solid State") {
+					disk.RPM = 0
+				} else {
+					// Extract RPM number
+					rpmFields := strings.Fields(rpmStr)
+					if len(rpmFields) > 0 {
+						if rpm, err := strconv.Atoi(rpmFields[0]); err == nil {
+							disk.RPM = rpm
+						}
+					}
+				}
+			}
+		} else if strings.Contains(line, "SMART overall-health") {
+			if strings.Contains(line, "PASSED") {
+				disk.Health = "OK"
+				disk.SmartHealthy = true
+			} else {
+				disk.Health = "FAILED"
+				disk.SmartHealthy = false
+			}
+			disk.SmartEnabled = true
+		} else if strings.Contains(line, "Current Temperature:") ||
+			strings.Contains(line, "Temperature_Celsius") {
+			// Parse temperature from various formats
+			fields := strings.Fields(line)
+			for _, field := range fields {
+				if temp, err := strconv.ParseFloat(field, 64); err == nil && temp > 0 && temp < 100 {
+					disk.Temperature = temp
+					break
+				}
+			}
+		} else if strings.Contains(line, "Power_On_Hours") {
+			// Parse power on hours from SMART attributes
+			fields := strings.Fields(line)
+			if len(fields) >= 10 {
+				if hours, err := strconv.ParseInt(fields[9], 10, 64); err == nil {
+					disk.PowerOnHours = hours
+				}
+			}
+		}
+	}
+
+	// Set defaults if not found
+	if disk.Health == "" {
+		disk.Health = "Unknown"
+	}
+
+	return disk
 }
 
 // mergeDiskInfo merges disk information from different sources
