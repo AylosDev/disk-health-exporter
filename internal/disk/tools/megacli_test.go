@@ -10,9 +10,9 @@ func TestGetRAIDArrays(t *testing.T) {
 	// This is a unit test for the MegaCLI tool functionality
 	// For real testing, we would need to mock the command execution
 	// Here we're testing the basic setup only
-	
+
 	megaTool := NewMegaCLITool()
-	
+
 	// Just verify the tool is correctly initialized
 	if megaTool.GetName() != "MegaCLI" {
 		t.Errorf("Expected tool name to be 'MegaCLI', got '%s'", megaTool.GetName())
