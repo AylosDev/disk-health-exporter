@@ -83,6 +83,14 @@ func (l *LinuxSystem) GetDisks() ([]types.DiskInfo, []types.RAIDInfo) {
 		log.Printf("Found %d NVMe disks", len(filtered))
 	}
 
+	if l.toolsAvailable.hdparm {
+		hdparmTool := tools.NewHdparmTool()
+		disks := hdparmTool.GetDisks()
+		filtered := l.filterDisks(disks)
+		allDisks = l.mergeDisks(allDisks, filtered)
+		log.Printf("Enhanced disk info via hdparm")
+	}
+
 	// Handle RAID arrays
 	if l.toolsAvailable.megacli {
 		megaTool := tools.NewMegaCLITool()
@@ -90,6 +98,30 @@ func (l *LinuxSystem) GetDisks() ([]types.DiskInfo, []types.RAIDInfo) {
 			raids := megaTool.GetRAIDArrays()
 			allRAIDs = append(allRAIDs, raids...)
 			log.Printf("Found %d hardware RAID arrays via MegaCLI", len(raids))
+		}
+	}
+
+	if l.toolsAvailable.storcli {
+		storeTool := tools.NewStoreCLITool()
+		if storeTool.IsAvailable() {
+			raids := storeTool.GetRAIDArrays()
+			allRAIDs = append(allRAIDs, raids...)
+			raidDisks := storeTool.GetRAIDDisks()
+			filtered := l.filterDisks(raidDisks)
+			allDisks = append(allDisks, filtered...)
+			log.Printf("Found %d hardware RAID arrays and %d RAID disks via StoreCLI", len(raids), len(filtered))
+		}
+	}
+
+	if l.toolsAvailable.arcconf {
+		arcconfTool := tools.NewArcconfTool()
+		if arcconfTool.IsAvailable() {
+			raids := arcconfTool.GetRAIDArrays()
+			allRAIDs = append(allRAIDs, raids...)
+			raidDisks := arcconfTool.GetRAIDDisks()
+			filtered := l.filterDisks(raidDisks)
+			allDisks = append(allDisks, filtered...)
+			log.Printf("Found %d hardware RAID arrays and %d RAID disks via arcconf", len(raids), len(filtered))
 		}
 	}
 
@@ -112,6 +144,19 @@ func (l *LinuxSystem) GetDisks() ([]types.DiskInfo, []types.RAIDInfo) {
 			allRAIDs = append(allRAIDs, raid)
 		}
 		log.Printf("Found %d software RAID arrays via mdadm", len(softwareRAIDs))
+	}
+
+	if l.toolsAvailable.zpool {
+		zpoolTool := tools.NewZpoolTool()
+		if zpoolTool.IsAvailable() {
+			zfsPools := zpoolTool.GetZFSPools()
+			// Convert ZFS pools to RAIDInfo format (they're already in that format)
+			allRAIDs = append(allRAIDs, zfsPools...)
+			zfsDisks := zpoolTool.GetDisks()
+			filtered := l.filterDisks(zfsDisks)
+			allDisks = append(allDisks, filtered...)
+			log.Printf("Found %d ZFS pools and %d ZFS disks via zpool", len(zfsPools), len(filtered))
+		}
 	}
 
 	log.Printf("Total: %d disks, %d RAID arrays", len(allDisks), len(allRAIDs))
@@ -232,6 +277,30 @@ func (l *LinuxSystem) GetToolInfo() types.ToolInfo {
 		}
 		if version, err := utils.GetToolVersion(cmd, "-v"); err == nil {
 			toolInfo.MegaCLIVersion = version
+		}
+	}
+	if toolInfo.Storcli {
+		cmd := "storcli"
+		if utils.CommandExists("storcli64") {
+			cmd = "storcli64"
+		}
+		if version, err := utils.GetToolVersion(cmd, "version"); err == nil {
+			toolInfo.StorCLIVersion = version
+		}
+	}
+	if toolInfo.Hdparm {
+		if version, err := utils.GetToolVersion("hdparm", "-V"); err == nil {
+			toolInfo.HdparmVersion = version
+		}
+	}
+	if toolInfo.Arcconf {
+		if version, err := utils.GetToolVersion("arcconf", "version"); err == nil {
+			toolInfo.ArcconfVersion = version
+		}
+	}
+	if toolInfo.Zpool {
+		if version, err := utils.GetToolVersion("zpool", "version"); err == nil {
+			toolInfo.ZpoolVersion = version
 		}
 	}
 

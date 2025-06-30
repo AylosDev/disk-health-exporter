@@ -19,6 +19,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.0.9] - 2025-06-30
+
+### Added
+
+- **Complete StoreCLI support** - Implemented comprehensive StoreCLI (Broadcom) RAID tool integration
+  - Supports both JSON and plain text parsing modes for maximum compatibility
+  - Detects RAID arrays with full virtual drive information (size, RAID level, status)
+  - Detects individual physical disks within RAID arrays with detailed metadata
+  - Auto-detection of `storcli64` and `storcli` commands
+  - Comprehensive error handling and fallback mechanisms
+  - Complete test coverage and interface compliance verification
+
+- **Arcconf support** - Added support for Adaptec/Microsemi RAID controllers
+  - Detects RAID arrays via `arcconf getconfig <controller> ld`
+  - Detects physical disks via `arcconf getconfig <controller> pd`
+  - Supports multiple controllers with automatic discovery
+  - Normalizes RAID levels (0, 1, 5, 6, 10, 50, 60) to standard format
+  - Maps controller states to health values (optimal=1, degraded=2, failed=3)
+  - Full integration with Linux disk detection system
+
+- **Zpool support** - Added comprehensive ZFS pool and disk management
+  - Detects ZFS pools via `zpool list` with health and capacity information
+  - Extracts individual disks from pool configurations using `zpool status`
+  - Supports various ZFS RAID levels (mirror, raidz1, raidz2, raidz3)
+  - Maps ZFS health states (online=1, degraded=2, faulted=3) to numeric values
+  - Enriches disk information using `lsblk` when available for additional metadata
+  - Treats ZFS pools as storage arrays similar to hardware RAID
+
+- **Hdparm support** - Added ATA/IDE disk parameter utility integration
+  - Detects ATA/SATA disks and extracts detailed hardware information
+  - Parses transport information (SATA version, interface type)
+  - Extracts form factor, capacity, RPM, and SMART support status
+  - Focuses on ATA/IDE/SATA devices (excludes NVMe which hdparm doesn't support)
+  - Provides fallback disk interface detection for older systems
+
+- **Enhanced tool version reporting** - Extended ToolInfo structure with version fields
+  - Added `HdparmVersion`, `ArcconfVersion`, and `ZpoolVersion` fields
+  - Complete version detection for all supported tools
+  - Version information included in system tool reporting
+
+### Changed
+
+- **Improved StoreCLI device naming** - Enhanced RAID disk device identifiers for better clarity
+  - Changed from confusing `storcli-252:0` format to descriptive `raid-enc252-slot0`
+  - Device names now clearly indicate enclosure and slot information
+  - Consistent naming across JSON and plain text parsing modes
+  - Better integration with monitoring dashboards and metrics
+
+- **Complete tool integration** - All detected tools now fully integrated into Linux disk detection
+  - Added arcconf, zpool, and hdparm to the main `GetDisks()` method
+  - Tools are called when available and results merged with existing disk information
+  - Proper filtering and deduplication of disk information across tools
+  - Enhanced logging with tool-specific disk and array counts
+
+### Fixed
+
+- **Tool interface compliance** - Ensured all tools properly implement required interfaces
+  - StoreCLI implements `CombinedToolInterface` (both disk and RAID detection)
+  - Arcconf implements `RAIDToolInterface` (RAID-focused tool)
+  - Zpool implements `DiskToolInterface` (disk detection with pool information)
+  - Hdparm implements `DiskToolInterface` (disk parameter detection)
+  - All tools include comprehensive test coverage and interface verification
+
 ## [0.0.8] - 2025-06-30
 
 ### Added

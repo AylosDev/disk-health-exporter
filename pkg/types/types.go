@@ -171,6 +171,10 @@ type ToolInfo struct {
 	Lsblk           bool // lsblk available
 	SmartCtlVersion string
 	MegaCLIVersion  string
+	StorCLIVersion  string
+	HdparmVersion   string
+	ArcconfVersion  string
+	ZpoolVersion    string
 }
 
 // SoftwareRAIDInfo represents software RAID information
