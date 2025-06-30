@@ -129,7 +129,7 @@ lint:
 
 ## production/build: build optimized production binaries for all platforms
 .PHONY: production/build
-production/build: confirm audit 
+production/build: audit 
 	@echo "Building production binaries..."
 	@mkdir -p ${TEMP_DIR}/release
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ${RELEASE_FLAGS} -ldflags='${LDFLAGS}' -o=${TEMP_DIR}/release/${BINARY_NAME}-linux-amd64 ${BUILD_PATH}

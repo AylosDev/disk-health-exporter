@@ -106,7 +106,7 @@ func boolToFloat(b bool) float64 {
 
 // collectLinuxMetrics collects metrics on Linux systems
 func (c *Collector) collectLinuxMetrics() {
-	disks, raidArrays := c.diskManager.GetLinuxDisks()
+	disks, raidArrays := c.diskManager.GetDisks()
 
 	// Update RAID array metrics with comprehensive data
 	for _, raid := range raidArrays {
@@ -197,7 +197,7 @@ func (c *Collector) collectLinuxMetrics() {
 
 // collectMacOSMetrics collects metrics on macOS systems
 func (c *Collector) collectMacOSMetrics() {
-	disks := c.diskManager.GetMacOSDisks()
+	disks, _ := c.diskManager.GetDisks()
 	c.updateComprehensiveDiskMetrics(disks)
 
 	log.Printf("Updated metrics for %d macOS disks", len(disks))
@@ -208,7 +208,7 @@ func (c *Collector) collectFallbackMetrics() {
 	log.Printf("Using fallback disk detection for OS: %s", runtime.GOOS)
 
 	// Try to get regular disks as fallback
-	disks, _ := c.diskManager.GetLinuxDisks()
+	disks, _ := c.diskManager.GetDisks()
 	c.updateComprehensiveDiskMetrics(disks)
 
 	log.Printf("Updated metrics for %d disks (fallback mode)", len(disks))
