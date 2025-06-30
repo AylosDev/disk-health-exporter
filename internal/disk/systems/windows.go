@@ -12,14 +12,27 @@ import (
 type WindowsSystem struct {
 	targetDisks    []string
 	ignorePatterns []string
+	toolsAvailable struct {
+		smartctl bool
+		nvme     bool
+	}
 }
 
 // NewWindowsSystem creates a new WindowsSystem instance
 func NewWindowsSystem(targetDisks []string, ignorePatterns []string) *WindowsSystem {
-	return &WindowsSystem{
+	w := &WindowsSystem{
 		targetDisks:    targetDisks,
 		ignorePatterns: ignorePatterns,
 	}
+
+	// Check tool availability once at startup
+	w.toolsAvailable.smartctl = utils.CommandExists("smartctl")
+	w.toolsAvailable.nvme = utils.CommandExists("nvme")
+
+	log.Printf("Windows tool availability detected: smartctl=%v, nvme=%v",
+		w.toolsAvailable.smartctl, w.toolsAvailable.nvme)
+
+	return w
 }
 
 // GetDisks gets all disks on Windows systems using available tools
@@ -36,7 +49,7 @@ func (w *WindowsSystem) GetDisks() ([]types.DiskInfo, []types.RAIDInfo) {
 	log.Printf("Found %d disks via Windows APIs", len(filtered))
 
 	// Enhance with SMART data if available
-	if utils.CommandExists("smartctl") {
+	if w.toolsAvailable.smartctl {
 		for i, disk := range allDisks {
 			smartInfo := w.getSmartInfo(disk.Device)
 			if smartInfo.Device != "" {
@@ -132,9 +145,9 @@ func (w *WindowsSystem) GetSystemType() string {
 func (w *WindowsSystem) GetToolInfo() types.ToolInfo {
 	var toolInfo types.ToolInfo
 
-	// Check tool availability - Windows compatible tools
-	toolInfo.SmartCtl = utils.CommandExists("smartctl")
-	toolInfo.Nvme = utils.CommandExists("nvme")
+	// Use cached tool availability
+	toolInfo.SmartCtl = w.toolsAvailable.smartctl
+	toolInfo.Nvme = w.toolsAvailable.nvme
 
 	// Get versions for available tools
 	if toolInfo.SmartCtl {

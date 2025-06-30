@@ -28,7 +28,6 @@ curl http://localhost:9100/metrics
 # View specific metric families
 curl -s http://localhost:9100/metrics | grep disk_health_status
 curl -s http://localhost:9100/metrics | grep raid_array
-curl -s http://localhost:9100/metrics | grep tool_available
 ```
 
 ## Prometheus Integration
@@ -161,14 +160,6 @@ software_raid_array_status != 1
 software_raid_sync_progress_percentage < 100 and software_raid_sync_progress_percentage > 0
 ```
 
-### Tool Availability Monitoring
-
-```promql
-# Critical tools not available
-disk_monitoring_tool_available{tool="smartctl"} == 0
-disk_monitoring_tool_available{tool="megacli"} == 0
-```
-
 ## Alerting Rules
 
 ### Prometheus Alerting Rules
@@ -238,16 +229,6 @@ groups:
         annotations:
           summary: "RAID array {{ $labels.array_id }} degraded"
           description: "RAID array {{ $labels.array_id }} is in {{ $labels.state }} state"
-
-      # Tool not available
-      - alert: MonitoringToolMissing
-        expr: disk_monitoring_tool_available{tool=~"smartctl|megacli"} == 0
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Disk monitoring tool {{ $labels.tool }} not available"
-          description: "Critical disk monitoring tool {{ $labels.tool }} is not available"
 ```
 
 ## Grafana Dashboards
@@ -319,12 +300,6 @@ disk_reallocated_sectors_total > 0 or disk_pending_sectors_total > 0 or disk_unc
 disk_percentage_used
 ```
 
-#### Tool Availability Summary
-
-```promql
-sum by (tool) (disk_monitoring_tool_available)
-```
-
 ## Advanced Usage
 
 ### Custom Metrics Collection
@@ -394,11 +369,7 @@ predict_linear(disk_percentage_used[30d], 86400 * 365)
 
 #### Missing Metrics
 
-Check tool availability:
-
-```bash
-curl -s http://localhost:9100/metrics | grep tool_available
-```
+Check if the exporter is detecting disks properly by examining the logs and ensuring required monitoring tools are installed.
 
 #### Incorrect Values
 

@@ -65,9 +65,6 @@ type Metrics struct {
 	RaidBatteryDesignCapacity   *prometheus.GaugeVec
 	RaidBatteryDesignVoltage    *prometheus.GaugeVec
 	RaidBatteryAutoLearnPeriod  *prometheus.GaugeVec
-
-	// Tool availability metrics
-	ToolAvailable *prometheus.GaugeVec
 }
 
 // New creates and registers all metrics
@@ -419,15 +416,6 @@ func New() *Metrics {
 			},
 			[]string{"adapter_id", "battery_type", "controller"},
 		),
-
-		// Tool availability metrics
-		ToolAvailable: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "disk_monitoring_tool_available",
-				Help: "Whether a disk monitoring tool is available (1=available, 0=not available)",
-			},
-			[]string{"tool", "version"},
-		),
 	}
 
 	// Register all metrics
@@ -491,9 +479,6 @@ func New() *Metrics {
 		m.RaidBatteryDesignCapacity,
 		m.RaidBatteryDesignVoltage,
 		m.RaidBatteryAutoLearnPeriod,
-
-		// Tool availability metrics
-		m.ToolAvailable,
 	)
 
 	return m
@@ -559,6 +544,4 @@ func (m *Metrics) Reset() {
 	m.RaidBatteryDesignCapacity.Reset()
 	m.RaidBatteryDesignVoltage.Reset()
 	m.RaidBatteryAutoLearnPeriod.Reset()
-
-	// Note: We don't reset ToolAvailable as tools don't change during runtime
 }

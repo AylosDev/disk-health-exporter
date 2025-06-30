@@ -62,9 +62,6 @@ func (c *Collector) updateMetrics() {
 	// Clear previous metrics
 	c.metrics.Reset()
 
-	// Update tool availability metrics
-	c.updateToolMetrics()
-
 	// Detect operating system
 	osType := runtime.GOOS
 	log.Printf("Detected OS: %s", osType)
@@ -80,22 +77,6 @@ func (c *Collector) updateMetrics() {
 }
 
 // updateToolMetrics updates metrics about available tools
-func (c *Collector) updateToolMetrics() {
-	toolInfo := c.diskManager.GetToolInfo()
-
-	// Update tool availability metrics
-	c.metrics.ToolAvailable.WithLabelValues("smartctl", toolInfo.SmartCtlVersion).Set(boolToFloat(toolInfo.SmartCtl))
-	c.metrics.ToolAvailable.WithLabelValues("megacli", toolInfo.MegaCLIVersion).Set(boolToFloat(toolInfo.MegaCLI))
-	c.metrics.ToolAvailable.WithLabelValues("mdadm", "unknown").Set(boolToFloat(toolInfo.Mdadm))
-	c.metrics.ToolAvailable.WithLabelValues("arcconf", "unknown").Set(boolToFloat(toolInfo.Arcconf))
-	c.metrics.ToolAvailable.WithLabelValues("storcli", "unknown").Set(boolToFloat(toolInfo.Storcli))
-	c.metrics.ToolAvailable.WithLabelValues("zpool", "unknown").Set(boolToFloat(toolInfo.Zpool))
-	c.metrics.ToolAvailable.WithLabelValues("diskutil", "unknown").Set(boolToFloat(toolInfo.Diskutil))
-	c.metrics.ToolAvailable.WithLabelValues("nvme", "unknown").Set(boolToFloat(toolInfo.Nvme))
-	c.metrics.ToolAvailable.WithLabelValues("hdparm", "unknown").Set(boolToFloat(toolInfo.Hdparm))
-	c.metrics.ToolAvailable.WithLabelValues("lsblk", "unknown").Set(boolToFloat(toolInfo.Lsblk))
-}
-
 // boolToFloat converts boolean to float64 for metrics
 func boolToFloat(b bool) float64 {
 	if b {

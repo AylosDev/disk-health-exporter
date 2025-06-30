@@ -210,9 +210,6 @@ raid_battery_temperature_celsius{adapter_id="0",battery_type="CVPM02",controller
 
 # RAID array status
 raid_array_status{array_id="0",type="hardware",controller="MegaCLI"} 1
-
-# Tool availability
-disk_monitoring_tool_available{tool="smartctl",version="smartmontools 7.2"} 1
 ```
 
 ## Supported Platforms

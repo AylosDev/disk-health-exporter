@@ -203,13 +203,6 @@ RAID controllers often have backup batteries (BBU - Backup Battery Unit) to ensu
 - **`raid_battery_auto_learn_period_days`**: Battery auto learn period in days
   - Labels: adapter_id, battery_type, controller
 
-## Tool Availability Metrics
-
-- **`disk_monitoring_tool_available`**: Whether a disk monitoring tool is available
-  - Values: `1` (available), `0` (not available)
-  - Labels: tool, version
-  - Tools: `smartctl`, `megacli`, `storcli`, `arcconf`, `mdadm`, `nvme`, `hdparm`, `lsblk`, `diskutil`, `zpool`
-
 ## Exporter Metrics
 
 - **`disk_health_exporter_up`**: Whether the disk health exporter is up and running

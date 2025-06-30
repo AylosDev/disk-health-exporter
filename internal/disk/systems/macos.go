@@ -12,14 +12,31 @@ import (
 type MacOSSystem struct {
 	targetDisks    []string
 	ignorePatterns []string
+	toolsAvailable struct {
+		diskutil bool
+		smartctl bool
+		nvme     bool
+		zpool    bool
+	}
 }
 
 // NewMacOSSystem creates a new MacOSSystem instance
 func NewMacOSSystem(targetDisks []string, ignorePatterns []string) *MacOSSystem {
-	return &MacOSSystem{
+	m := &MacOSSystem{
 		targetDisks:    targetDisks,
 		ignorePatterns: ignorePatterns,
 	}
+
+	// Check tool availability once at startup
+	m.toolsAvailable.diskutil = utils.CommandExists("diskutil")
+	m.toolsAvailable.smartctl = utils.CommandExists("smartctl")
+	m.toolsAvailable.nvme = utils.CommandExists("nvme")
+	m.toolsAvailable.zpool = utils.CommandExists("zpool")
+
+	log.Printf("macOS tool availability detected: diskutil=%v, smartctl=%v, nvme=%v, zpool=%v",
+		m.toolsAvailable.diskutil, m.toolsAvailable.smartctl, m.toolsAvailable.nvme, m.toolsAvailable.zpool)
+
+	return m
 }
 
 // GetDisks gets all disks on macOS systems using available tools
@@ -30,7 +47,7 @@ func (m *MacOSSystem) GetDisks() ([]types.DiskInfo, []types.RAIDInfo) {
 	log.Println("Detecting disks on macOS system...")
 
 	// Use diskutil for macOS disk detection
-	if utils.CommandExists("diskutil") {
+	if m.toolsAvailable.diskutil {
 		disks := m.getDiskutilDisks()
 		filtered := m.filterDisks(disks)
 		allDisks = append(allDisks, filtered...)
@@ -38,7 +55,7 @@ func (m *MacOSSystem) GetDisks() ([]types.DiskInfo, []types.RAIDInfo) {
 	}
 
 	// Enhance with SMART data if available
-	if utils.CommandExists("smartctl") {
+	if m.toolsAvailable.smartctl {
 		for i, disk := range allDisks {
 			smartInfo := m.getSmartInfo(disk.Device)
 			if smartInfo.Device != "" {
@@ -134,11 +151,11 @@ func (m *MacOSSystem) GetSystemType() string {
 func (m *MacOSSystem) GetToolInfo() types.ToolInfo {
 	var toolInfo types.ToolInfo
 
-	// Check tool availability - macOS specific tools
-	toolInfo.Diskutil = utils.CommandExists("diskutil")
-	toolInfo.SmartCtl = utils.CommandExists("smartctl")
-	toolInfo.Nvme = utils.CommandExists("nvme")
-	toolInfo.Zpool = utils.CommandExists("zpool")
+	// Use cached tool availability
+	toolInfo.Diskutil = m.toolsAvailable.diskutil
+	toolInfo.SmartCtl = m.toolsAvailable.smartctl
+	toolInfo.Nvme = m.toolsAvailable.nvme
+	toolInfo.Zpool = m.toolsAvailable.zpool
 
 	// Get versions for available tools
 	if toolInfo.SmartCtl {

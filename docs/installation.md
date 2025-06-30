@@ -250,13 +250,6 @@ curl http://localhost:9100/metrics
 curl -s http://localhost:9100/metrics | grep disk_health_status
 ```
 
-### Verify Tool Detection
-
-```bash
-# Check which tools are detected
-curl -s http://localhost:9100/metrics | grep disk_monitoring_tool_available
-```
-
 ## Platform-Specific Notes
 
 ### Linux

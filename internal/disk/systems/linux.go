@@ -12,14 +12,43 @@ import (
 type LinuxSystem struct {
 	targetDisks    []string
 	ignorePatterns []string
+	toolsAvailable struct {
+		lsblk    bool
+		smartctl bool
+		nvme     bool
+		megacli  bool
+		mdadm    bool
+		arcconf  bool
+		storcli  bool
+		zpool    bool
+		hdparm   bool
+	}
 }
 
 // NewLinuxSystem creates a new LinuxSystem instance
 func NewLinuxSystem(targetDisks []string, ignorePatterns []string) *LinuxSystem {
-	return &LinuxSystem{
+	l := &LinuxSystem{
 		targetDisks:    targetDisks,
 		ignorePatterns: ignorePatterns,
 	}
+
+	// Check tool availability once at startup
+	l.toolsAvailable.lsblk = utils.CommandExists("lsblk")
+	l.toolsAvailable.smartctl = utils.CommandExists("smartctl")
+	l.toolsAvailable.nvme = utils.CommandExists("nvme")
+	l.toolsAvailable.megacli = utils.CommandExists("megacli") || utils.CommandExists("MegaCli64")
+	l.toolsAvailable.mdadm = utils.CommandExists("mdadm")
+	l.toolsAvailable.arcconf = utils.CommandExists("arcconf")
+	l.toolsAvailable.storcli = utils.CommandExists("storcli") || utils.CommandExists("storcli64")
+	l.toolsAvailable.zpool = utils.CommandExists("zpool")
+	l.toolsAvailable.hdparm = utils.CommandExists("hdparm")
+
+	log.Printf("Linux tool availability detected: lsblk=%v, smartctl=%v, nvme=%v, megacli=%v, mdadm=%v, arcconf=%v, storcli=%v, zpool=%v, hdparm=%v",
+		l.toolsAvailable.lsblk, l.toolsAvailable.smartctl, l.toolsAvailable.nvme,
+		l.toolsAvailable.megacli, l.toolsAvailable.mdadm, l.toolsAvailable.arcconf,
+		l.toolsAvailable.storcli, l.toolsAvailable.zpool, l.toolsAvailable.hdparm)
+
+	return l
 }
 
 // GetDisks gets all disks on Linux systems using multiple tools
@@ -30,7 +59,7 @@ func (l *LinuxSystem) GetDisks() ([]types.DiskInfo, []types.RAIDInfo) {
 	log.Println("Detecting disks on Linux system...")
 
 	// Use available tools to detect disks
-	if utils.CommandExists("lsblk") {
+	if l.toolsAvailable.lsblk {
 		lsblkTool := tools.NewLsblkTool()
 		disks := lsblkTool.GetDisks()
 		filtered := l.filterDisks(disks)
@@ -38,7 +67,7 @@ func (l *LinuxSystem) GetDisks() ([]types.DiskInfo, []types.RAIDInfo) {
 		log.Printf("Found %d disks via lsblk", len(filtered))
 	}
 
-	if utils.CommandExists("smartctl") {
+	if l.toolsAvailable.smartctl {
 		smartTool := tools.NewSmartCtlTool()
 		disks := smartTool.GetDisks()
 		filtered := l.filterDisks(disks)
@@ -46,7 +75,7 @@ func (l *LinuxSystem) GetDisks() ([]types.DiskInfo, []types.RAIDInfo) {
 		log.Printf("Enhanced disk info via smartctl")
 	}
 
-	if utils.CommandExists("nvme") {
+	if l.toolsAvailable.nvme {
 		nvmeTool := tools.NewNvmeTool()
 		disks := nvmeTool.GetDisks()
 		filtered := l.filterDisks(disks)
@@ -55,7 +84,7 @@ func (l *LinuxSystem) GetDisks() ([]types.DiskInfo, []types.RAIDInfo) {
 	}
 
 	// Handle RAID arrays
-	if utils.CommandExists("megacli") || utils.CommandExists("MegaCli64") {
+	if l.toolsAvailable.megacli {
 		megaTool := tools.NewMegaCLITool()
 		if megaTool.IsAvailable() {
 			raids := megaTool.GetRAIDArrays()
@@ -64,7 +93,7 @@ func (l *LinuxSystem) GetDisks() ([]types.DiskInfo, []types.RAIDInfo) {
 		}
 	}
 
-	if utils.CommandExists("mdadm") {
+	if l.toolsAvailable.mdadm {
 		mdadmTool := tools.NewMdadmTool()
 		softwareRAIDs := mdadmTool.GetSoftwareRAIDs()
 		// Convert to RAIDInfo format
@@ -179,16 +208,16 @@ func (l *LinuxSystem) GetSystemType() string {
 func (l *LinuxSystem) GetToolInfo() types.ToolInfo {
 	var toolInfo types.ToolInfo
 
-	// Check tool availability
-	toolInfo.SmartCtl = utils.CommandExists("smartctl")
-	toolInfo.MegaCLI = utils.CommandExists("megacli") || utils.CommandExists("MegaCli64")
-	toolInfo.Mdadm = utils.CommandExists("mdadm")
-	toolInfo.Arcconf = utils.CommandExists("arcconf")
-	toolInfo.Storcli = utils.CommandExists("storcli") || utils.CommandExists("storcli64")
-	toolInfo.Zpool = utils.CommandExists("zpool")
-	toolInfo.Nvme = utils.CommandExists("nvme")
-	toolInfo.Hdparm = utils.CommandExists("hdparm")
-	toolInfo.Lsblk = utils.CommandExists("lsblk")
+	// Use cached tool availability
+	toolInfo.SmartCtl = l.toolsAvailable.smartctl
+	toolInfo.MegaCLI = l.toolsAvailable.megacli
+	toolInfo.Mdadm = l.toolsAvailable.mdadm
+	toolInfo.Arcconf = l.toolsAvailable.arcconf
+	toolInfo.Storcli = l.toolsAvailable.storcli
+	toolInfo.Zpool = l.toolsAvailable.zpool
+	toolInfo.Nvme = l.toolsAvailable.nvme
+	toolInfo.Hdparm = l.toolsAvailable.hdparm
+	toolInfo.Lsblk = l.toolsAvailable.lsblk
 
 	// Get tool versions
 	if toolInfo.SmartCtl {
