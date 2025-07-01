@@ -50,6 +50,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Interface information** - Preserved disk interface details from specialized tools
   - **Type classification** - Maintained disk type information (regular, raid, nvme, etc.) during merging
 
+- **StoreCLI multiple disk detection** - Fixed critical issue where StoreCLI parser was only detecting one disk instead of all available disks
+  - **Per-drive section parsing** - Enhanced parser to handle StoreCLI's per-drive output format where each disk has its own individual section
+  - **Multiple disk support** - Fixed `parseStoreCLISummaryTable()` to continue parsing after each drive table instead of stopping after the first one
+  - **Section boundary detection** - Improved logic to properly detect start/end of individual drive sections in detailed output format
+  - **Real-world compatibility** - Updated parser to match actual StoreCLI output format from PERC H740P and similar controllers
+
 ### Changed
 
 - **RAID tool interface unification** - Major refactoring to simplify and consolidate RAID tool interfaces
@@ -75,6 +81,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Hardware RAID explanation** - Documented why hardware RAID controllers hide disks from OS tools
   - **Tool necessity** - Explained why specialized RAID tools are required to access individual physical disks
   - **Detection strategy** - Clarified the multi-layered approach: OS tools + RAID tools + software storage tools
+
+- **Logging cleanup** - Reduced verbose debug logging to improve production readiness
+  - **Debug log removal** - Removed debug and informational log statements from StoreCLI and Linux system detection
+  - **Error log preservation** - Kept all error logging for troubleshooting and diagnostics
+  - **Cleaner output** - Reduced log noise during normal operation while maintaining error visibility
 
 ### Platform Support
 

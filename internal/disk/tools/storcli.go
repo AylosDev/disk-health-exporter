@@ -103,7 +103,6 @@ func (s *StoreCLITool) GetRAIDDisks() []types.DiskInfo {
 		// Parse the detailed output for disk roles and spare information
 		detailedDisks := s.parseStoreCLIDisksWithRoles(string(output), raidArrays)
 		if len(detailedDisks) > 0 {
-			log.Printf("Found %d RAID disks with utilization using StoreCLI", len(detailedDisks))
 			return detailedDisks
 		}
 	}
@@ -415,20 +414,29 @@ func (s *StoreCLITool) parseStoreCLIDisksJSON(output []byte) []types.DiskInfo {
 		return disks
 	}
 
-	for _, controller := range controllers {
+	for controllerIndex, controller := range controllers {
 		ctrlMap, ok := controller.(map[string]interface{})
 		if !ok {
 			continue
 		}
 
+		// Extract controller ID - try from response data first, fallback to index
+		controllerID := fmt.Sprintf("%d", controllerIndex)
 		if responseData, exists := ctrlMap["Response Data"]; exists {
 			if dataMap, ok := responseData.(map[string]interface{}); ok {
+				// Try to get actual controller ID from response data
+				if ctrlIDField, exists := dataMap["Controller"]; exists {
+					if ctrlIDStr := fmt.Sprintf("%v", ctrlIDField); ctrlIDStr != "" {
+						controllerID = ctrlIDStr
+					}
+				}
+
 				// Look for Drive Information
 				if driveInfo, exists := dataMap["Drive Information"]; exists {
 					if driveArray, ok := driveInfo.([]interface{}); ok {
 						for _, drive := range driveArray {
 							if driveMap, ok := drive.(map[string]interface{}); ok {
-								disk := s.parsePhysicalDrive(driveMap)
+								disk := s.parsePhysicalDrive(driveMap, controllerID)
 								if disk.Device != "" {
 									disks = append(disks, disk)
 								}
@@ -444,20 +452,20 @@ func (s *StoreCLITool) parseStoreCLIDisksJSON(output []byte) []types.DiskInfo {
 }
 
 // parsePhysicalDrive parses a single physical drive from JSON
-func (s *StoreCLITool) parsePhysicalDrive(driveMap map[string]interface{}) types.DiskInfo {
+func (s *StoreCLITool) parsePhysicalDrive(driveMap map[string]interface{}, controllerID string) types.DiskInfo {
 	disk := types.DiskInfo{
 		Type: "raid",
 	}
 
 	if eid, exists := driveMap["EID:Slt"]; exists {
-		disk.Location = fmt.Sprintf("EID:Slt %v", eid)
-		// Convert "252:0" to "raid-enc252-slot0" for better readability
+		disk.Location = fmt.Sprintf("Controller:%s EID:Slt %v", controllerID, eid)
+		// Convert "252:0" to "raid-c0-enc252-slot0" for better readability
 		eidStr := fmt.Sprintf("%v", eid)
 		parts := strings.Split(eidStr, ":")
 		if len(parts) == 2 {
-			disk.Device = fmt.Sprintf("raid-enc%s-slot%s", parts[0], parts[1])
+			disk.Device = fmt.Sprintf("raid-c%s-enc%s-slot%s", controllerID, parts[0], parts[1])
 		} else {
-			disk.Device = fmt.Sprintf("raid-drive-%v", eid)
+			disk.Device = fmt.Sprintf("raid-c%s-drive-%v", controllerID, eid)
 		}
 	}
 
@@ -553,26 +561,37 @@ func (s *StoreCLITool) getRAIDDisksPlainText() []types.DiskInfo {
 
 	// Parse physical disk information (simplified)
 	lines := strings.Split(string(output), "\n")
+	var currentController = "0" // Default controller
+
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
+
+		// Try to detect controller information from the output
+		if strings.Contains(line, "Controller =") {
+			// Extract controller number: "Controller = 0"
+			parts := strings.Split(line, "=")
+			if len(parts) > 1 {
+				currentController = strings.TrimSpace(parts[1])
+			}
+		}
 
 		// Look for drive entries in the format: EID:Slt DID State DG Size Intf Med SED PI SeSz Model
 		if driveRegex.MatchString(line) {
 			fields := strings.Fields(line)
 			if len(fields) >= 6 {
-				// Convert "252:0" to "raid-enc252-slot0" for consistency
+				// Convert "252:0" to "raid-c0-enc252-slot0" for consistency
 				eidSlot := fields[0]
 				parts := strings.Split(eidSlot, ":")
 				var deviceName string
 				if len(parts) == 2 {
-					deviceName = fmt.Sprintf("raid-enc%s-slot%s", parts[0], parts[1])
+					deviceName = fmt.Sprintf("raid-c%s-enc%s-slot%s", currentController, parts[0], parts[1])
 				} else {
-					deviceName = fmt.Sprintf("raid-drive-%s", eidSlot)
+					deviceName = fmt.Sprintf("raid-c%s-drive-%s", currentController, eidSlot)
 				}
 
 				disk := types.DiskInfo{
 					Device:   deviceName,
-					Location: fmt.Sprintf("EID:Slt %s", eidSlot),
+					Location: fmt.Sprintf("Controller:%s EID:Slt %s", currentController, eidSlot),
 					Health:   fields[2],
 					Type:     "raid",
 				}
@@ -603,28 +622,31 @@ func (s *StoreCLITool) getRAIDDisksPlainText() []types.DiskInfo {
 // enrichRAIDDiskWithSMART enriches RAID disk information with SMART data via StoreCLI
 func (s *StoreCLITool) enrichRAIDDiskWithSMART(disk *types.DiskInfo) {
 	if !s.IsAvailable() {
+
 		return
 	}
 
-	// Extract controller and slot info from device name (raid-enc64-slot3)
-	if !strings.HasPrefix(disk.Device, "raid-enc") {
+	// Extract controller and slot info from device name (raid-c0-enc64-slot3)
+	if !strings.HasPrefix(disk.Device, "raid-c") {
 		return
 	}
 
-	// Parse enclosure and slot from device name
+	// Parse controller, enclosure and slot from device name
 	parts := strings.Split(disk.Device, "-")
-	if len(parts) < 3 {
+	if len(parts) < 5 {
 		return
 	}
 
-	enclosure := strings.TrimPrefix(parts[1], "enc")
-	slot := strings.TrimPrefix(parts[2], "slot")
+	controller := strings.TrimPrefix(parts[1], "c")
+	enclosure := strings.TrimPrefix(parts[2], "enc")
+	slot := strings.TrimPrefix(parts[3], "slot")
 
 	// Try to get SMART data via StoreCLI
-	output, err := exec.Command(s.command, fmt.Sprintf("/c0/e%s/s%s", enclosure, slot), "show", "all").Output()
+	cmd := fmt.Sprintf("/c%s/e%s/s%s", controller, enclosure, slot)
+	output, err := exec.Command(s.command, cmd, "show", "all").Output()
 	if err != nil {
 		// Try alternative command format
-		output, err = exec.Command(s.command, fmt.Sprintf("/c0/e%s/s%s", enclosure, slot), "show").Output()
+		output, err = exec.Command(s.command, cmd, "show").Output()
 		if err != nil {
 			return
 		}
@@ -632,6 +654,8 @@ func (s *StoreCLITool) enrichRAIDDiskWithSMART(disk *types.DiskInfo) {
 
 	// Parse output for SMART data
 	lines := strings.Split(string(output), "\n")
+	smartDataFound := false
+
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 
@@ -645,15 +669,30 @@ func (s *StoreCLITool) enrichRAIDDiskWithSMART(disk *types.DiskInfo) {
 				}
 			}
 		} else if strings.Contains(line, "S.M.A.R.T alert") {
+			smartDataFound = true
 			disk.SmartEnabled = !strings.Contains(strings.ToLower(line), "no")
 		} else if strings.Contains(line, "Drive health") || strings.Contains(line, "State") {
-			if strings.Contains(strings.ToLower(line), "online") || strings.Contains(strings.ToLower(line), "optimal") {
+			smartDataFound = true
+			lowerLine := strings.ToLower(line)
+			if strings.Contains(lowerLine, "online") || strings.Contains(lowerLine, "optimal") || strings.Contains(lowerLine, "good") {
 				disk.SmartHealthy = true
 				disk.Health = "OK"
-			} else if strings.Contains(strings.ToLower(line), "failed") || strings.Contains(strings.ToLower(line), "critical") {
+			} else if strings.Contains(lowerLine, "failed") || strings.Contains(lowerLine, "critical") || strings.Contains(lowerLine, "bad") {
 				disk.SmartHealthy = false
 				disk.Health = "FAILED"
+			} else {
+				// For unknown states, assume healthy unless explicitly failed
+				disk.SmartHealthy = true
+				disk.Health = "UNKNOWN"
 			}
+		}
+	}
+
+	if !smartDataFound {
+		// If no explicit SMART data found, but disk.Health is already set from parsing, use that
+		if disk.Health == "Onln" || strings.Contains(strings.ToLower(disk.Health), "online") {
+			disk.SmartHealthy = true
+			disk.SmartEnabled = true // Assume SMART is available through RAID controller
 		}
 	}
 }
@@ -668,16 +707,27 @@ func (s *StoreCLITool) parseStoreCLIDisksWithRoles(output string, raidArrays []t
 	}
 
 	// Fallback to detailed per-drive parsing
-	return s.parseStoreCLIDetailedFormat(lines, raidArrays)
+	detailedDisks := s.parseStoreCLIDetailedFormat(lines, raidArrays)
+	return detailedDisks
 }
 
 // parseStoreCLISummaryTable parses the table format output from StoreCLI
 func (s *StoreCLITool) parseStoreCLISummaryTable(lines []string, raidArrays []types.RAIDInfo) []types.DiskInfo {
 	var disks []types.DiskInfo
 	var inDriveTable bool
+	var currentController = "0" // Default controller, will be updated when we detect controller sections
 
-	for _, line := range lines {
+	for i, line := range lines {
 		line = strings.TrimSpace(line)
+
+		// Try to detect controller information from the output
+		if strings.Contains(line, "Controller =") {
+			// Extract controller number: "Controller = 0"
+			parts := strings.Split(line, "=")
+			if len(parts) > 1 {
+				currentController = strings.TrimSpace(parts[1])
+			}
+		}
 
 		// Detect the start of the drive table (header line)
 		if strings.Contains(line, "EID:Slt DID State DG") && strings.Contains(line, "Size") && strings.Contains(line, "Model") {
@@ -685,17 +735,19 @@ func (s *StoreCLITool) parseStoreCLISummaryTable(lines []string, raidArrays []ty
 			continue
 		}
 
-		// Detect the end of the drive table
-		if inDriveTable && (strings.Contains(line, "--------") || line == "" || strings.Contains(line, "=")) {
-			if strings.Contains(line, "=") {
-				break // End of section
+		// Detect the end of the drive table - but don't break, continue looking for more tables
+		if inDriveTable && strings.Contains(line, "--------") && i < len(lines)-1 {
+			// Check if this is the closing line by looking for separator or explanation lines
+			nextLine := strings.TrimSpace(lines[i+1])
+			if nextLine == "" || strings.Contains(nextLine, "EID=Enclosure") || strings.Contains(nextLine, "DHS=Dedicated") {
+				inDriveTable = false
+				continue
 			}
-			continue
 		}
 
 		// Parse drive data lines
-		if inDriveTable && strings.Contains(line, ":") {
-			disk := s.parseStoreCLITableLine(line, raidArrays)
+		if inDriveTable && strings.Contains(line, ":") && !strings.Contains(line, "EID:Slt") {
+			disk := s.parseStoreCLITableLine(line, raidArrays, currentController)
 			if disk.Device != "" {
 				disks = append(disks, disk)
 			}
@@ -706,7 +758,7 @@ func (s *StoreCLITool) parseStoreCLISummaryTable(lines []string, raidArrays []ty
 }
 
 // parseStoreCLITableLine parses a single line from the StoreCLI drive table
-func (s *StoreCLITool) parseStoreCLITableLine(line string, raidArrays []types.RAIDInfo) types.DiskInfo {
+func (s *StoreCLITool) parseStoreCLITableLine(line string, raidArrays []types.RAIDInfo, controllerID string) types.DiskInfo {
 	fields := strings.Fields(line)
 	if len(fields) < 8 {
 		return types.DiskInfo{} // Invalid line
@@ -727,30 +779,22 @@ func (s *StoreCLITool) parseStoreCLITableLine(line string, raidArrays []types.RA
 	}
 
 	disk := types.DiskInfo{
-		Device:    fmt.Sprintf("raid-enc%s-slot%s", eidSlotParts[0], eidSlotParts[1]),
-		Location:  fmt.Sprintf("EID:%s Slot:%s", eidSlotParts[0], eidSlotParts[1]),
+		Device:    fmt.Sprintf("raid-c%s-enc%s-slot%s", controllerID, eidSlotParts[0], eidSlotParts[1]),
+		Location:  fmt.Sprintf("Controller:%s EID:%s Slot:%s", controllerID, eidSlotParts[0], eidSlotParts[1]),
 		Health:    state,
 		Type:      "raid",
 		Interface: intf,
 		Capacity:  utils.ParseSizeToBytes(size + " " + unit),
 	}
 
-	// Parse model from remaining fields
-	// Model typically starts after the fixed fields (SED, PI, SeSz are usually at positions 8, 9, 10)
-	if len(fields) > 11 {
-		// Find the model by looking for the field that contains letters (not just single chars like N, U)
-		modelStart := -1
-		for i := 11; i < len(fields)-2; i++ { // Skip last 2 fields which are typically Sp and Type
-			if len(fields[i]) > 2 && !strings.Contains(fields[i], "B") { // Not a size field like "512B"
-				modelStart = i
-				break
-			}
-		}
-		if modelStart >= 0 {
-			modelEnd := len(fields) - 2 // Exclude Sp and Type at the end
-			if modelEnd > modelStart {
-				disk.Model = strings.Join(fields[modelStart:modelEnd], " ")
-			}
+	// Parse model using field position logic
+	// Format: EID:Slt DID State DG Size Unit Intf Med SED PI SeSz Model... Sp Type
+	// Fields 0-10 are fixed, Model starts at field 11, ends 2 fields before the end
+	if len(fields) >= 13 { // Minimum: 11 fixed fields + model + Sp + Type
+		modelStart := 11
+		modelEnd := len(fields) - 2 // Exclude Sp and Type at the end
+		if modelEnd > modelStart {
+			disk.Model = strings.Join(fields[modelStart:modelEnd], " ")
 		}
 	}
 
@@ -779,6 +823,29 @@ func (s *StoreCLITool) parseStoreCLIDetailedFormat(lines []string, raidArrays []
 	var inDriveSection bool
 	var inDetailedSection bool
 
+	// Helper function to finalize and add current disk
+	finalizeCurrentDisk := func() {
+		if currentDisk.Device != "" {
+			// Find the corresponding array for utilization calculation
+			for i, raid := range raidArrays {
+				if raid.ArrayID == currentDisk.RaidArrayID {
+					currentArray = &raidArrays[i]
+					break
+				}
+			}
+
+			// Calculate utilization
+			if currentArray != nil {
+				s.calculateStoreCLIDiskUtilization(&currentDisk, currentArray)
+			} else {
+				s.calculateStoreCLIDiskUtilization(&currentDisk, nil)
+			}
+
+			// Add the completed disk
+			disks = append(disks, currentDisk)
+		}
+	}
+
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 
@@ -788,20 +855,32 @@ func (s *StoreCLITool) parseStoreCLIDetailedFormat(lines []string, raidArrays []
 		}
 
 		// Detect start of drive section
-		if strings.Contains(line, "Drive /c0/e") && strings.Contains(line, " :") {
-			// New drive section starting
+		if strings.Contains(line, "Drive /c") && strings.Contains(line, "/e") && strings.Contains(line, " :") {
+
+			// Finalize previous disk if exists
+			finalizeCurrentDisk()
+
+			// Initialize new drive section
 			inDriveSection = true
 			inDetailedSection = false
-			currentDisk = types.DiskInfo{Type: "raid", Interface: "SATA"} // Default values
+			currentDisk = types.DiskInfo{
+				Type:         "raid",
+				Interface:    "SATA",
+				SmartEnabled: true, // Assume SMART is available through RAID controller
+				SmartHealthy: true, // Default to healthy unless proven otherwise
+				Health:       "OK", // Default health status
+			}
+			currentArray = nil
 
-			// Extract EID and Slot from header: "Drive /c0/e64/s3 :"
-			re := regexp.MustCompile(`Drive /c0/e(\d+)/s(\d+)`)
+			// Extract Controller, EID and Slot from header: "Drive /c0/e64/s3 :"
+			re := regexp.MustCompile(`Drive /c(\d+)/e(\d+)/s(\d+)`)
 			matches := re.FindStringSubmatch(line)
-			if len(matches) >= 3 {
-				enclosure := matches[1]
-				slot := matches[2]
-				currentDisk.Device = fmt.Sprintf("raid-enc%s-slot%s", enclosure, slot)
-				currentDisk.Location = fmt.Sprintf("EID:%s Slot:%s", enclosure, slot)
+			if len(matches) >= 4 {
+				controller := matches[1]
+				enclosure := matches[2]
+				slot := matches[3]
+				currentDisk.Device = fmt.Sprintf("raid-c%s-enc%s-slot%s", controller, enclosure, slot)
+				currentDisk.Location = fmt.Sprintf("Controller:%s EID:%s Slot:%s", controller, enclosure, slot)
 			}
 			continue
 		}
@@ -841,9 +920,15 @@ func (s *StoreCLITool) parseStoreCLIDetailedFormat(lines []string, raidArrays []
 					currentDisk.Interface = fields[6]
 				}
 
-				// Parse model (starts from field 10 typically)
-				if len(fields) > 10 {
-					currentDisk.Model = strings.Join(fields[10:], " ")
+				// Parse model using field position logic
+				// Format: EID:Slt DID State DG Size Unit Intf Med SED PI SeSz Model... Sp Type
+				// Fields 0-10 are fixed, Model starts at field 11, ends 2 fields before the end
+				if len(fields) >= 13 { // Minimum: 11 fixed fields + model + Sp + Type
+					modelStart := 11
+					modelEnd := len(fields) - 2 // Exclude Sp and Type at the end
+					if modelEnd > modelStart {
+						currentDisk.Model = strings.Join(fields[modelStart:modelEnd], " ")
+					}
 				}
 			}
 			continue
@@ -901,67 +986,18 @@ func (s *StoreCLITool) parseStoreCLIDetailedFormat(lines []string, raidArrays []
 			} else if strings.Contains(line, "S.M.A.R.T alert flagged by drive =") {
 				// Extract SMART status: "S.M.A.R.T alert flagged by drive = No"
 				currentDisk.SmartEnabled = true
-				currentDisk.SmartHealthy = strings.Contains(line, "= No")
-			}
-		}
-
-		// End of current drive section - finalize the disk
-		if (strings.Contains(line, "Drive /c0/e") && strings.Contains(line, " :") && currentDisk.Device != "") ||
-			(strings.Contains(line, "Inquiry Data =") && currentDisk.Device != "") {
-
-			// If we're starting a new drive or at inquiry data, finalize current disk
-			if strings.Contains(line, "Inquiry Data =") ||
-				(strings.Contains(line, "Drive /c0/e") && currentDisk.Device != "") {
-
-				// Find the corresponding array for utilization calculation
-				for i, raid := range raidArrays {
-					if raid.ArrayID == currentDisk.RaidArrayID {
-						currentArray = &raidArrays[i]
-						break
-					}
-				}
-
-				// Calculate utilization
-				if currentArray != nil {
-					s.calculateStoreCLIDiskUtilization(&currentDisk, currentArray)
-				} else {
-					// No array found, handle unconfigured/spare drives
-					s.calculateStoreCLIDiskUtilization(&currentDisk, nil)
-				}
-
-				// Add the completed disk
-				if currentDisk.Device != "" {
-					disks = append(disks, currentDisk)
-				}
-
-				// Reset for next drive (unless this is inquiry data)
-				if !strings.Contains(line, "Inquiry Data =") {
-					currentDisk = types.DiskInfo{Type: "raid", Interface: "SATA"}
-					currentArray = nil
-					inDetailedSection = false
+				// If line contains "= No", it means no SMART alert, so disk is healthy
+				if strings.Contains(line, "= No") {
+					currentDisk.SmartHealthy = true
+				} else if strings.Contains(line, "= Yes") {
+					currentDisk.SmartHealthy = false
 				}
 			}
 		}
 	}
 
-	// Add the last disk if we ended without seeing another drive
-	if currentDisk.Device != "" {
-		// Find the corresponding array for utilization calculation
-		for i, raid := range raidArrays {
-			if raid.ArrayID == currentDisk.RaidArrayID {
-				currentArray = &raidArrays[i]
-				break
-			}
-		}
-
-		if currentArray != nil {
-			s.calculateStoreCLIDiskUtilization(&currentDisk, currentArray)
-		} else {
-			s.calculateStoreCLIDiskUtilization(&currentDisk, nil)
-		}
-
-		disks = append(disks, currentDisk)
-	}
+	// Don't forget to finalize the last disk
+	finalizeCurrentDisk()
 
 	return disks
 }
@@ -1017,10 +1053,15 @@ func (s *StoreCLITool) calculateBasicUtilization(disk *types.DiskInfo, raidArray
 func (s *StoreCLITool) determineStoreCLIRaidRole(disk *types.DiskInfo, state string, driveGroup string, raidArrays []types.RAIDInfo) {
 	stateLower := strings.ToLower(state)
 
+	// Set health status based on state - this is important for the final health assessment
 	switch {
 	case strings.Contains(stateLower, "onln") || strings.Contains(stateLower, "online"):
 		disk.RaidRole = "active"
 		disk.RaidArrayID = driveGroup
+		disk.SmartHealthy = true // Online disks are healthy
+		disk.SmartEnabled = true // Assume SMART available through RAID controller
+		disk.Health = "OK"       // Override the raw state with a cleaner status
+
 		// Find and set the specific array
 		for _, raid := range raidArrays {
 			if raid.ArrayID == driveGroup {
@@ -1031,34 +1072,55 @@ func (s *StoreCLITool) determineStoreCLIRaidRole(disk *types.DiskInfo, state str
 	case strings.Contains(stateLower, "ghs") || strings.Contains(stateLower, "global hot spare"):
 		disk.RaidRole = "hot_spare"
 		disk.IsGlobalSpare = true
+		disk.SmartHealthy = true // Spare disks are typically healthy
+		disk.SmartEnabled = true
 
 	case strings.Contains(stateLower, "dhs") || strings.Contains(stateLower, "dedicated hot spare"):
 		disk.RaidRole = "hot_spare"
 		disk.IsDedicatedSpare = true
 		disk.RaidArrayID = driveGroup
+		disk.SmartHealthy = true // Spare disks are typically healthy
+		disk.SmartEnabled = true
 
 	case strings.Contains(stateLower, "spare"):
 		disk.RaidRole = "spare"
+		disk.SmartHealthy = true // Spare disks are typically healthy
+		disk.SmartEnabled = true
 
 	case strings.Contains(stateLower, "failed") || strings.Contains(stateLower, "fail"):
 		disk.RaidRole = "failed"
+		disk.SmartHealthy = false
+		disk.Health = "FAILED"
 
 	case strings.Contains(stateLower, "rebuild") || strings.Contains(stateLower, "rbld"):
 		disk.RaidRole = "rebuilding"
 		disk.RaidArrayID = driveGroup
+		disk.SmartHealthy = true // Rebuilding disks are still functional
+		disk.SmartEnabled = true
 
 	case strings.Contains(stateLower, "ugood") || strings.Contains(stateLower, "unconfigured good"):
 		disk.RaidRole = "unconfigured"
+		disk.SmartHealthy = true // Good unconfigured disks are healthy
+		disk.SmartEnabled = true
 
 	case strings.Contains(stateLower, "ubad") || strings.Contains(stateLower, "unconfigured bad"):
 		disk.RaidRole = "unconfigured"
 		disk.Health = "FAILED"
+		disk.SmartHealthy = false
 
 	case strings.Contains(stateLower, "offln") || strings.Contains(stateLower, "offline"):
 		disk.RaidRole = "failed"
+		disk.SmartHealthy = false
+		disk.Health = "FAILED"
 
 	default:
 		disk.RaidRole = "unknown"
+		// For unknown states, be conservative but check if it looks healthy
+		if !strings.Contains(stateLower, "fail") && !strings.Contains(stateLower, "bad") && !strings.Contains(stateLower, "error") {
+			disk.SmartHealthy = true
+			disk.SmartEnabled = true
+
+		}
 	}
 }
 
@@ -1177,7 +1239,6 @@ func (s *StoreCLITool) GetSpareDisks() []types.DiskInfo {
 		}
 	}
 
-	log.Printf("Found %d spare disks using StoreCLI", len(spareDisks))
 	return spareDisks
 }
 
@@ -1192,6 +1253,5 @@ func (s *StoreCLITool) GetUnconfiguredDisks() []types.DiskInfo {
 		}
 	}
 
-	log.Printf("Found %d unconfigured disks using StoreCLI", len(unconfiguredDisks))
 	return unconfiguredDisks
 }
