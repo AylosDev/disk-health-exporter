@@ -89,6 +89,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **MegaCLI parsing improvements** - Fixed critical parsing issues in MegaCLI RAID tool integration
+  - **Corrected adapter ID regex** - Fixed regex pattern from `Adapter (\d+):` to `Adapter (\d+) --` to match real MegaCLI output format
+  - **Fixed disk location parsing** - Updated parser to handle separate "Enclosure Device ID:" and "Slot Number:" lines instead of expecting them on the same line
+  - **Corrected model extraction** - Fixed inquiry data parsing to extract first field (model name) instead of remaining fields, properly identifying disk models like `SAMSUNG-MZ7LH960HAJR`
+  - **Fixed data processing order** - Ensured "Inquiry Data:" is processed before "Firmware state:" to prevent empty model names in disk information
+  - **Enhanced battery metrics exposure** - Battery information now correctly parsed and exposed in Prometheus metrics for MegaCLI-based RAID systems
+
+- **Comprehensive MegaCLI test suite** - Added robust unit testing for MegaCLI parsing logic
+  - **Mock-based testing** - Created comprehensive mock MegaCLI tool with realistic command outputs for RAID arrays, battery info, and disk information
+  - **Anonymized test data** - Mock data uses randomized but realistic hardware identifiers (WWNs, serial numbers, device IDs) for security
+  - **Parser validation** - Mock parser logic exactly matches real parser implementation for reliable test coverage
+  - **Error scenario testing** - Added tests for command failures and edge cases in MegaCLI parsing
+  - **Real output alignment** - Test data format precisely matches actual MegaCLI command output structure and ordering
+
 - **StoreCLI RAID status mapping** - Fixed RAID array status showing as 0 (unknown) instead of 1 (ok)
   - Added support for "OPTL" (Optimal) state mapping to status value 1
   - Added support for "DGRD" (Degraded) state mapping to status value 2

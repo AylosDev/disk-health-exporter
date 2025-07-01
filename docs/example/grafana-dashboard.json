@@ -117,7 +117,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "disk_health_status",
+          "expr": "disk_health_status{job=~\"$job\"}",
           "format": "time_series",
           "legendFormat": "{{device}} ({{model}})",
           "refId": "A"
@@ -179,7 +179,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "count by (value) (label_replace(disk_health_status, \"status\", \"Unknown\", \"value\", \"0\") or label_replace(disk_health_status, \"status\", \"Healthy\", \"value\", \"1\") or label_replace(disk_health_status, \"status\", \"Warning\", \"value\", \"2\") or label_replace(disk_health_status, \"status\", \"Critical\", \"value\", \"3\"))",
+          "expr": "count by (value) (label_replace(disk_health_status{job=~\"$job\"}, \"status\", \"Unknown\", \"value\", \"0\") or label_replace(disk_health_status{job=~\"$job\"}, \"status\", \"Healthy\", \"value\", \"1\") or label_replace(disk_health_status{job=~\"$job\"}, \"status\", \"Warning\", \"value\", \"2\") or label_replace(disk_health_status{job=~\"$job\"}, \"status\", \"Critical\", \"value\", \"3\"))",
           "format": "time_series",
           "legendFormat": "{{status}}",
           "refId": "A"
@@ -287,7 +287,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "disk_temperature_celsius",
+          "expr": "disk_temperature_celsius{job=~\"$job\"}",
           "format": "time_series",
           "legendFormat": "{{device}} ({{model}})",
           "refId": "A"
@@ -391,7 +391,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "raid_array_status",
+          "expr": "raid_array_status{job=~\"$job\"}",
           "format": "time_series",
           "legendFormat": "Array {{array_id}} ({{raid_level}})",
           "refId": "A"
@@ -484,7 +484,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "raid_array_rebuild_progress_percentage",
+          "expr": "raid_array_rebuild_progress_percentage{job=~\"$job\"}",
           "format": "time_series",
           "legendFormat": "Rebuild {{array_id}}",
           "refId": "A"
@@ -494,7 +494,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "raid_array_scrub_progress_percentage",
+          "expr": "raid_array_scrub_progress_percentage{job=~\"$job\"}",
           "format": "time_series",
           "legendFormat": "Scrub {{array_id}}",
           "refId": "B"
@@ -584,7 +584,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "raid_array_drives_total",
+          "expr": "raid_array_drives_total{job=~\"$job\"}",
           "format": "time_series",
           "legendFormat": "Total {{array_id}}",
           "refId": "A"
@@ -594,7 +594,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "raid_array_active_drives",
+          "expr": "raid_array_active_drives{job=~\"$job\"}",
           "format": "time_series",
           "legendFormat": "Active {{array_id}}",
           "refId": "B"
@@ -604,7 +604,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "raid_array_failed_drives",
+          "expr": "raid_array_failed_drives{job=~\"$job\"}",
           "format": "time_series",
           "legendFormat": "Failed {{array_id}}",
           "refId": "C"
@@ -707,7 +707,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "disk_reallocated_sectors_total",
+          "expr": "disk_reallocated_sectors_total{job=~\"$job\"}",
           "format": "time_series",
           "legendFormat": "Reallocated {{device}}",
           "refId": "A"
@@ -717,7 +717,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "disk_pending_sectors_total",
+          "expr": "disk_pending_sectors_total{job=~\"$job\"}",
           "format": "time_series",
           "legendFormat": "Pending {{device}}",
           "refId": "B"
@@ -727,7 +727,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "disk_uncorrectable_errors_total",
+          "expr": "disk_uncorrectable_errors_total{job=~\"$job\"}",
           "format": "time_series",
           "legendFormat": "Uncorrectable {{device}}",
           "refId": "C"
@@ -824,7 +824,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "disk_wear_leveling_percentage",
+          "expr": "disk_wear_leveling_percentage{job=~\"$job\"}",
           "format": "time_series",
           "legendFormat": "Wear Level {{device}}",
           "refId": "A"
@@ -834,7 +834,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "disk_percentage_used",
+          "expr": "disk_percentage_used{job=~\"$job\"}",
           "format": "time_series",
           "legendFormat": "Used {{device}}",
           "refId": "B"
@@ -938,7 +938,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "disk_power_on_hours_total",
+          "expr": "disk_power_on_hours_total{job=~\"$job\"}",
           "format": "time_series",
           "legendFormat": "{{device}} ({{model}})",
           "refId": "A"
@@ -1029,7 +1029,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "disk_capacity_bytes",
+          "expr": "disk_capacity_bytes{job=~\"$job\"}",
           "format": "time_series",
           "legendFormat": "{{device}} ({{model}})",
           "refId": "A"
@@ -1104,7 +1104,7 @@
               }
             ]
           },
-          "unit": "volt"
+          "unit": "mvolt"
         },
         "overrides": []
       },
@@ -1133,7 +1133,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "raid_battery_voltage",
+          "expr": "raid_battery_voltage_millivolts{job=~\"$job\"}",
           "format": "time_series",
           "legendFormat": "Battery {{controller}}",
           "refId": "A"
@@ -1224,7 +1224,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "raid_battery_temperature",
+          "expr": "raid_battery_temperature_celsius{job=~\"$job\"}",
           "format": "time_series",
           "legendFormat": "Battery {{controller}}",
           "refId": "A"
@@ -1301,7 +1301,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "raid_battery_status",
+          "expr": "raid_battery_status{job=~\"$job\"}",
           "format": "time_series",
           "legendFormat": "Battery {{controller}}",
           "refId": "A"
@@ -1391,90 +1391,13 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "disk_health_exporter_up",
+          "expr": "disk_health_exporter_up{job=~\"$job\"}",
           "format": "time_series",
           "legendFormat": "Exporter Status",
           "refId": "A"
         }
       ],
       "title": "Exporter Status",
-      "type": "gauge"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "color": "red",
-                  "index": 0,
-                  "text": "Not Available"
-                },
-                "1": {
-                  "color": "green",
-                  "index": 1,
-                  "text": "Available"
-                }
-              },
-              "type": "value"
-            }
-          ],
-          "thresholds": {
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 12,
-        "x": 12,
-        "y": 55
-      },
-      "id": 22,
-      "options": {
-        "orientation": "auto",
-        "reduceOptions": {
-          "values": false,
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": ""
-        },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true
-      },
-      "pluginVersion": "10.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "tool_available",
-          "format": "time_series",
-          "legendFormat": "{{tool}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Tool Availability",
       "type": "gauge"
     }
   ],
@@ -1507,6 +1430,28 @@
         "regex": "",
         "skipUrlSync": false,
         "type": "datasource"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "hide": 0,
+        "includeAll": true,
+        "label": "Job",
+        "multi": true,
+        "name": "job",
+        "options": [],
+        "query": {
+          "query": "label_values(disk_health_exporter_up, job)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
       }
     ]
   },

@@ -78,7 +78,7 @@ clean:
 
 # audit: run quality control checks
 .PHONY: audit
-audit: test
+audit: test test/coverage
 	go mod tidy -diff
 	go mod verify
 	test -z "$(shell gofmt -l .)" 

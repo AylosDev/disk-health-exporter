@@ -79,9 +79,9 @@ func (m *MegaCLITool) GetRAIDArrays() []types.RAIDInfo {
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 
-		if strings.Contains(line, "Adapter") && strings.Contains(line, ":") {
-			// Extract adapter ID for battery info
-			re := regexp.MustCompile(`Adapter (\d+):`)
+		if strings.Contains(line, "Adapter") && strings.Contains(line, "--") {
+			// Extract adapter ID for battery info (format: "Adapter 0 -- Virtual Drive Information:")
+			re := regexp.MustCompile(`Adapter (\d+) --`)
 			matches := re.FindStringSubmatch(line)
 			if len(matches) > 1 {
 				adapterID = matches[1]
@@ -175,24 +175,25 @@ func (m *MegaCLITool) GetRAIDDisks() []types.DiskInfo {
 	// Parse physical disk information
 	lines := strings.Split(string(output), "\n")
 	var currentDisk types.DiskInfo
+	var enclosure, slot string
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 
-		if strings.Contains(line, "Enclosure Device ID:") && strings.Contains(line, "Slot Number:") {
-			// Extract enclosure and slot for location
-			parts := strings.Fields(line)
-			enclosure := ""
-			slot := ""
-			for i, part := range parts {
-				if part == "ID:" && i+1 < len(parts) {
-					enclosure = parts[i+1]
-				}
-				if part == "Number:" && i+1 < len(parts) {
-					slot = parts[i+1]
-				}
+		if strings.Contains(line, "Enclosure Device ID:") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				enclosure = strings.TrimSpace(parts[1])
 			}
-			currentDisk.Location = fmt.Sprintf("Enc:%s Slot:%s", enclosure, slot)
+		} else if strings.Contains(line, "Slot Number:") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				slot = strings.TrimSpace(parts[1])
+			}
+			// Set location when we have both enclosure and slot
+			if enclosure != "" && slot != "" {
+				currentDisk.Location = fmt.Sprintf("Enc:%s Slot:%s", enclosure, slot)
+			}
 		} else if strings.Contains(line, "Device Id:") {
 			parts := strings.Split(line, ":")
 			if len(parts) > 1 {
@@ -202,10 +203,10 @@ func (m *MegaCLITool) GetRAIDDisks() []types.DiskInfo {
 			parts := strings.Split(line, ":")
 			if len(parts) > 1 {
 				inquiry := strings.TrimSpace(parts[1])
-				// Extract model from inquiry data
+				// Extract model from inquiry data - first field is typically the model
 				fields := strings.Fields(inquiry)
-				if len(fields) > 1 {
-					currentDisk.Model = strings.Join(fields[1:], " ")
+				if len(fields) > 0 {
+					currentDisk.Model = fields[0]
 				}
 			}
 		} else if strings.Contains(line, "Firmware state:") {
@@ -218,6 +219,8 @@ func (m *MegaCLITool) GetRAIDDisks() []types.DiskInfo {
 				if currentDisk.Device != "" {
 					disks = append(disks, currentDisk)
 					currentDisk = types.DiskInfo{} // Reset for next disk
+					enclosure = ""                 // Reset enclosure
+					slot = ""                      // Reset slot
 				}
 			}
 		}
