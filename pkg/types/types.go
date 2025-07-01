@@ -10,6 +10,18 @@ const (
 	HealthStatusCritical HealthStatus = 3
 )
 
+// RaidRole represents disk role in RAID configuration
+type RaidRole int
+
+const (
+	RaidRoleUnconfigured RaidRole = 0
+	RaidRoleActive       RaidRole = 1
+	RaidRoleSpare        RaidRole = 2
+	RaidRoleFailed       RaidRole = 3
+	RaidRoleRebuilding   RaidRole = 4
+	RaidRoleUnknown      RaidRole = 5
+)
+
 // DiskInfo represents information about a disk
 type DiskInfo struct {
 	Device              string
@@ -31,16 +43,31 @@ type DiskInfo struct {
 	DriveTemperatureMin float64 // Minimum recorded temperature
 	Interface           string  // SATA, NVMe, SAS, etc.
 	Capacity            int64   // Disk capacity in bytes
+	UsedBytes           int64   // Used space in bytes
+	AvailableBytes      int64   // Available space in bytes
+	UsagePercentage     float64 // Usage percentage (0-100)
+	Mountpoint          string  // Mount point path
+	Filesystem          string  // Filesystem type (ext4, xfs, ntfs, etc.)
 	FormFactor          string  // 2.5", 3.5", M.2, etc.
 	RPM                 int     // Rotational speed (0 for SSD/NVMe)
 	SmartEnabled        bool    // Whether SMART is enabled
 	SmartHealthy        bool    // SMART overall health assessment
-	WearLeveling        int     // SSD wear leveling percentage (0-100)
-	PercentageUsed      int     // NVMe percentage used
-	AvailableSpare      int     // NVMe available spare percentage
-	CriticalWarning     int     // NVMe critical warning
-	MediaErrors         int64   // NVMe media errors
-	ErrorLogEntries     int64   // Number of error log entries
+	// SSD specific fields
+	WearLeveling    int   // SSD wear leveling percentage (0-100)
+	PercentageUsed  int   // NVMe percentage used
+	AvailableSpare  int   // NVMe available spare percentage
+	CriticalWarning int   // NVMe critical warning
+	MediaErrors     int64 // NVMe media errors
+	ErrorLogEntries int64 // Number of error log entries
+
+	// RAID role and status information
+	RaidRole            string // "active", "spare", "hot_spare", "failed", "rebuilding", "unconfigured"
+	RaidArrayID         string // Which RAID array this disk belongs to (if any)
+	RaidPosition        string // Position in RAID array (e.g., "Arm: 0", "Spare", "Global Spare")
+	IsCommissionedSpare bool   // Whether this is a commissioned spare drive
+	IsEmergencySpare    bool   // Whether this is an emergency spare drive
+	IsGlobalSpare       bool   // Whether this is a global spare (can replace any failed drive)
+	IsDedicatedSpare    bool   // Whether this is dedicated to a specific array
 }
 
 // RAIDInfo represents RAID array information
@@ -60,6 +87,14 @@ type RAIDInfo struct {
 	Type            string           // "hardware", "software", "zfs", etc.
 	Controller      string           // Controller model/name
 	Battery         *RAIDBatteryInfo // Battery information (if available)
+
+	// Filesystem usage information (for virtual disks presented by RAID)
+	VirtualDevice     string  // Virtual device path (e.g., /dev/sda)
+	FilesystemUsed    int64   // Filesystem used bytes
+	FilesystemAvail   int64   // Filesystem available bytes
+	FilesystemPercent float64 // Filesystem usage percentage
+	Mountpoint        string  // Mount point path
+	Filesystem        string  // Filesystem type
 }
 
 // SmartCtlOutput represents smartctl JSON output structure

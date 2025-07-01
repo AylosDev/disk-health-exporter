@@ -86,7 +86,7 @@ func (s *StoreCLITool) GetDisks() []types.DiskInfo {
 	return s.GetRAIDDisks()
 }
 
-// GetRAIDDisks returns disk information from RAID arrays
+// GetRAIDDisks returns disk information from RAID arrays with utilization calculations
 func (s *StoreCLITool) GetRAIDDisks() []types.DiskInfo {
 	var disks []types.DiskInfo
 
@@ -94,8 +94,22 @@ func (s *StoreCLITool) GetRAIDDisks() []types.DiskInfo {
 		return disks
 	}
 
-	// Get physical disk information
-	output, err := exec.Command(s.command, "/call", "/eall", "/sall", "show", "J").Output()
+	// First get RAID array information to understand the configuration
+	raidArrays := s.GetRAIDArrays()
+
+	// Try to get physical disk information with detailed parsing first
+	output, err := exec.Command(s.command, "/call", "/eall", "/sall", "show", "all").Output()
+	if err == nil {
+		// Parse the detailed output for disk roles and spare information
+		detailedDisks := s.parseStoreCLIDisksWithRoles(string(output), raidArrays)
+		if len(detailedDisks) > 0 {
+			log.Printf("Found %d RAID disks with utilization using StoreCLI", len(detailedDisks))
+			return detailedDisks
+		}
+	}
+
+	// Fallback to JSON parsing
+	output, err = exec.Command(s.command, "/call", "/eall", "/sall", "show", "J").Output()
 	if err != nil {
 		log.Printf("Error executing StoreCLI for disk info: %v", err)
 		return s.getRAIDDisksPlainText()
@@ -104,18 +118,21 @@ func (s *StoreCLITool) GetRAIDDisks() []types.DiskInfo {
 	// Parse JSON output for disks
 	disks = s.parseStoreCLIDisksJSON(output)
 	if len(disks) > 0 {
-		// Enrich each disk with SMART data
+		// Enrich each disk with SMART data and utilization
 		for i := range disks {
 			s.enrichRAIDDiskWithSMART(&disks[i])
+			// Add basic utilization calculation for JSON-parsed disks
+			s.calculateBasicUtilization(&disks[i], raidArrays)
 		}
 		return disks
 	}
 
-	// Fallback to plain text parsing
+	// Final fallback to plain text parsing
 	disks = s.getRAIDDisksPlainText()
 	// Enrich plain text disks with SMART data too
 	for i := range disks {
 		s.enrichRAIDDiskWithSMART(&disks[i])
+		s.calculateBasicUtilization(&disks[i], raidArrays)
 	}
 	return disks
 }
@@ -639,4 +656,542 @@ func (s *StoreCLITool) enrichRAIDDiskWithSMART(disk *types.DiskInfo) {
 			}
 		}
 	}
+}
+
+// parseStoreCLIDisksWithRoles parses StoreCLI output to identify disk roles and spare drives
+func (s *StoreCLITool) parseStoreCLIDisksWithRoles(output string, raidArrays []types.RAIDInfo) []types.DiskInfo {
+	lines := strings.Split(output, "\n")
+
+	// First, try to parse the summary table format (like the output you provided)
+	if summaryDisks := s.parseStoreCLISummaryTable(lines, raidArrays); len(summaryDisks) > 0 {
+		return summaryDisks
+	}
+
+	// Fallback to detailed per-drive parsing
+	return s.parseStoreCLIDetailedFormat(lines, raidArrays)
+}
+
+// parseStoreCLISummaryTable parses the table format output from StoreCLI
+func (s *StoreCLITool) parseStoreCLISummaryTable(lines []string, raidArrays []types.RAIDInfo) []types.DiskInfo {
+	var disks []types.DiskInfo
+	var inDriveTable bool
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// Detect the start of the drive table (header line)
+		if strings.Contains(line, "EID:Slt DID State DG") && strings.Contains(line, "Size") && strings.Contains(line, "Model") {
+			inDriveTable = true
+			continue
+		}
+
+		// Detect the end of the drive table
+		if inDriveTable && (strings.Contains(line, "--------") || line == "" || strings.Contains(line, "=")) {
+			if strings.Contains(line, "=") {
+				break // End of section
+			}
+			continue
+		}
+
+		// Parse drive data lines
+		if inDriveTable && strings.Contains(line, ":") {
+			disk := s.parseStoreCLITableLine(line, raidArrays)
+			if disk.Device != "" {
+				disks = append(disks, disk)
+			}
+		}
+	}
+
+	return disks
+}
+
+// parseStoreCLITableLine parses a single line from the StoreCLI drive table
+func (s *StoreCLITool) parseStoreCLITableLine(line string, raidArrays []types.RAIDInfo) types.DiskInfo {
+	fields := strings.Fields(line)
+	if len(fields) < 8 {
+		return types.DiskInfo{} // Invalid line
+	}
+
+	// Example line: "64:3      3 Onln   0 893.750 GB SATA SSD N   N  512B SAMSUNG MZ7KM960HAHP-00005 U  -"
+	eidSlt := fields[0]     // "64:3"
+	state := fields[2]      // "Onln"
+	driveGroup := fields[3] // "0"
+	size := fields[4]       // "893.750"
+	unit := fields[5]       // "GB"
+	intf := fields[6]       // "SATA"
+
+	// Parse EID and Slot
+	eidSlotParts := strings.Split(eidSlt, ":")
+	if len(eidSlotParts) != 2 {
+		return types.DiskInfo{} // Invalid EID:Slot format
+	}
+
+	disk := types.DiskInfo{
+		Device:    fmt.Sprintf("raid-enc%s-slot%s", eidSlotParts[0], eidSlotParts[1]),
+		Location:  fmt.Sprintf("EID:%s Slot:%s", eidSlotParts[0], eidSlotParts[1]),
+		Health:    state,
+		Type:      "raid",
+		Interface: intf,
+		Capacity:  utils.ParseSizeToBytes(size + " " + unit),
+	}
+
+	// Parse model from remaining fields
+	// Model typically starts after the fixed fields (SED, PI, SeSz are usually at positions 8, 9, 10)
+	if len(fields) > 11 {
+		// Find the model by looking for the field that contains letters (not just single chars like N, U)
+		modelStart := -1
+		for i := 11; i < len(fields)-2; i++ { // Skip last 2 fields which are typically Sp and Type
+			if len(fields[i]) > 2 && !strings.Contains(fields[i], "B") { // Not a size field like "512B"
+				modelStart = i
+				break
+			}
+		}
+		if modelStart >= 0 {
+			modelEnd := len(fields) - 2 // Exclude Sp and Type at the end
+			if modelEnd > modelStart {
+				disk.Model = strings.Join(fields[modelStart:modelEnd], " ")
+			}
+		}
+	}
+
+	// Determine RAID role and calculate utilization
+	s.determineStoreCLIRaidRole(&disk, state, driveGroup, raidArrays)
+
+	// Find matching array for utilization calculation
+	var matchingArray *types.RAIDInfo
+	for i, raid := range raidArrays {
+		if raid.ArrayID == driveGroup {
+			matchingArray = &raidArrays[i]
+			break
+		}
+	}
+
+	s.calculateStoreCLIDiskUtilization(&disk, matchingArray)
+
+	return disk
+}
+
+// parseStoreCLIDetailedFormat parses the detailed per-drive format
+func (s *StoreCLITool) parseStoreCLIDetailedFormat(lines []string, raidArrays []types.RAIDInfo) []types.DiskInfo {
+	var disks []types.DiskInfo
+	var currentDisk types.DiskInfo
+	var currentArray *types.RAIDInfo
+	var inDriveSection bool
+	var inDetailedSection bool
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// Skip empty lines
+		if line == "" {
+			continue
+		}
+
+		// Detect start of drive section
+		if strings.Contains(line, "Drive /c0/e") && strings.Contains(line, " :") {
+			// New drive section starting
+			inDriveSection = true
+			inDetailedSection = false
+			currentDisk = types.DiskInfo{Type: "raid", Interface: "SATA"} // Default values
+
+			// Extract EID and Slot from header: "Drive /c0/e64/s3 :"
+			re := regexp.MustCompile(`Drive /c0/e(\d+)/s(\d+)`)
+			matches := re.FindStringSubmatch(line)
+			if len(matches) >= 3 {
+				enclosure := matches[1]
+				slot := matches[2]
+				currentDisk.Device = fmt.Sprintf("raid-enc%s-slot%s", enclosure, slot)
+				currentDisk.Location = fmt.Sprintf("EID:%s Slot:%s", enclosure, slot)
+			}
+			continue
+		}
+
+		// Detect detailed information section
+		if strings.Contains(line, "Detailed Information") {
+			inDetailedSection = true
+			continue
+		}
+
+		// Parse the main drive table line (the one with EID:Slt format)
+		if inDriveSection && !inDetailedSection && strings.Contains(line, ":") &&
+			(strings.Contains(line, "Onln") || strings.Contains(line, "GHS") ||
+				strings.Contains(line, "DHS") || strings.Contains(line, "UGood") ||
+				strings.Contains(line, "UBad") || strings.Contains(line, "Offln")) {
+
+			fields := strings.Fields(line)
+			if len(fields) >= 8 {
+				// Parse: EID:Slt DID State DG Size Intf Med SED PI SeSz Model...
+				// Example: 64:3 3 Onln 0 893.750 GB SATA SSD N N 512B SAMSUNG MZ7KM960HAHP-00005...
+
+				state := fields[2]
+				driveGroup := fields[3]
+				currentDisk.Health = state
+
+				// Determine RAID role and array assignment
+				s.determineStoreCLIRaidRole(&currentDisk, state, driveGroup, raidArrays)
+
+				// Parse capacity
+				if len(fields) > 5 {
+					sizeStr := fields[4] + " " + fields[5]
+					currentDisk.Capacity = utils.ParseSizeToBytes(sizeStr)
+				}
+
+				// Parse interface and media type
+				if len(fields) > 6 {
+					currentDisk.Interface = fields[6]
+				}
+
+				// Parse model (starts from field 10 typically)
+				if len(fields) > 10 {
+					currentDisk.Model = strings.Join(fields[10:], " ")
+				}
+			}
+			continue
+		}
+
+		// Parse detailed drive information
+		if inDetailedSection {
+			if strings.Contains(line, "Drive Temperature =") {
+				// Extract temperature: "Drive Temperature =  28C (82.40 F)"
+				re := regexp.MustCompile(`Drive Temperature =\s*(\d+)C`)
+				matches := re.FindStringSubmatch(line)
+				if len(matches) > 1 {
+					if temp, err := strconv.Atoi(matches[1]); err == nil {
+						currentDisk.Temperature = float64(temp)
+					}
+				}
+			} else if strings.Contains(line, "SN =") {
+				// Extract serial number: "SN = S2HTNX0J400715"
+				parts := strings.Split(line, "=")
+				if len(parts) > 1 {
+					currentDisk.Serial = strings.TrimSpace(parts[1])
+				}
+			} else if strings.Contains(line, "Model Number =") {
+				// Extract model: "Model Number = SAMSUNG MZ7KM960HAHP-00005"
+				parts := strings.Split(line, "=")
+				if len(parts) > 1 {
+					currentDisk.Model = strings.TrimSpace(parts[1])
+				}
+			} else if strings.Contains(line, "Drive position =") {
+				// Extract RAID position: "Drive position = DriveGroup:0, Span:0, Row:0"
+				parts := strings.Split(line, "=")
+				if len(parts) > 1 {
+					position := strings.TrimSpace(parts[1])
+					currentDisk.RaidPosition = position
+
+					// Extract DriveGroup for array mapping
+					re := regexp.MustCompile(`DriveGroup:(\d+)`)
+					matches := re.FindStringSubmatch(position)
+					if len(matches) > 1 {
+						currentDisk.RaidArrayID = matches[1]
+					}
+				}
+			} else if strings.Contains(line, "Commissioned Spare =") {
+				// Extract spare status: "Commissioned Spare = No"
+				currentDisk.IsCommissionedSpare = strings.Contains(line, "= Yes")
+				if currentDisk.IsCommissionedSpare {
+					currentDisk.RaidRole = "commissioned_spare"
+				}
+			} else if strings.Contains(line, "Emergency Spare =") {
+				// Extract emergency spare status: "Emergency Spare = No"
+				currentDisk.IsEmergencySpare = strings.Contains(line, "= Yes")
+				if currentDisk.IsEmergencySpare {
+					currentDisk.RaidRole = "emergency_spare"
+				}
+			} else if strings.Contains(line, "S.M.A.R.T alert flagged by drive =") {
+				// Extract SMART status: "S.M.A.R.T alert flagged by drive = No"
+				currentDisk.SmartEnabled = true
+				currentDisk.SmartHealthy = strings.Contains(line, "= No")
+			}
+		}
+
+		// End of current drive section - finalize the disk
+		if (strings.Contains(line, "Drive /c0/e") && strings.Contains(line, " :") && currentDisk.Device != "") ||
+			(strings.Contains(line, "Inquiry Data =") && currentDisk.Device != "") {
+
+			// If we're starting a new drive or at inquiry data, finalize current disk
+			if strings.Contains(line, "Inquiry Data =") ||
+				(strings.Contains(line, "Drive /c0/e") && currentDisk.Device != "") {
+
+				// Find the corresponding array for utilization calculation
+				for i, raid := range raidArrays {
+					if raid.ArrayID == currentDisk.RaidArrayID {
+						currentArray = &raidArrays[i]
+						break
+					}
+				}
+
+				// Calculate utilization
+				if currentArray != nil {
+					s.calculateStoreCLIDiskUtilization(&currentDisk, currentArray)
+				} else {
+					// No array found, handle unconfigured/spare drives
+					s.calculateStoreCLIDiskUtilization(&currentDisk, nil)
+				}
+
+				// Add the completed disk
+				if currentDisk.Device != "" {
+					disks = append(disks, currentDisk)
+				}
+
+				// Reset for next drive (unless this is inquiry data)
+				if !strings.Contains(line, "Inquiry Data =") {
+					currentDisk = types.DiskInfo{Type: "raid", Interface: "SATA"}
+					currentArray = nil
+					inDetailedSection = false
+				}
+			}
+		}
+	}
+
+	// Add the last disk if we ended without seeing another drive
+	if currentDisk.Device != "" {
+		// Find the corresponding array for utilization calculation
+		for i, raid := range raidArrays {
+			if raid.ArrayID == currentDisk.RaidArrayID {
+				currentArray = &raidArrays[i]
+				break
+			}
+		}
+
+		if currentArray != nil {
+			s.calculateStoreCLIDiskUtilization(&currentDisk, currentArray)
+		} else {
+			s.calculateStoreCLIDiskUtilization(&currentDisk, nil)
+		}
+
+		disks = append(disks, currentDisk)
+	}
+
+	return disks
+}
+
+// calculateBasicUtilization calculates basic utilization for disks without detailed role information
+func (s *StoreCLITool) calculateBasicUtilization(disk *types.DiskInfo, raidArrays []types.RAIDInfo) {
+	// Try to determine basic RAID role from health status
+	healthLower := strings.ToLower(disk.Health)
+
+	switch {
+	case strings.Contains(healthLower, "onln") || strings.Contains(healthLower, "online"):
+		disk.RaidRole = "active"
+		// Try to find which array this disk belongs to (basic guess)
+		if len(raidArrays) > 0 {
+			disk.RaidArrayID = raidArrays[0].ArrayID // Default to first array
+			s.calculateStoreCLIDiskUtilization(disk, &raidArrays[0])
+		}
+	case strings.Contains(healthLower, "spare") || strings.Contains(healthLower, "hot"):
+		disk.RaidRole = "hot_spare"
+		disk.UsedBytes = 0
+		disk.AvailableBytes = disk.Capacity
+		disk.UsagePercentage = 0.0
+		disk.Mountpoint = "SPARE"
+		disk.Filesystem = "Hot-Spare"
+	case strings.Contains(healthLower, "failed") || strings.Contains(healthLower, "fail"):
+		disk.RaidRole = "failed"
+		disk.UsedBytes = 0
+		disk.AvailableBytes = 0
+		disk.UsagePercentage = 0.0
+		disk.Mountpoint = "FAILED"
+		disk.Filesystem = "Failed-Drive"
+	case strings.Contains(healthLower, "unconfigured") || strings.Contains(healthLower, "ugood"):
+		disk.RaidRole = "unconfigured"
+		disk.UsedBytes = 0
+		disk.AvailableBytes = disk.Capacity
+		disk.UsagePercentage = 0.0
+		disk.Mountpoint = "UNCONFIGURED"
+		disk.Filesystem = "Unconfigured"
+	default:
+		disk.RaidRole = "unknown"
+		// For unknown roles, assume basic utilization
+		if disk.Capacity > 0 {
+			disk.UsagePercentage = 50.0 // Conservative estimate
+			disk.UsedBytes = disk.Capacity / 2
+			disk.AvailableBytes = disk.Capacity / 2
+			disk.Mountpoint = "RAID-UNKNOWN"
+			disk.Filesystem = "Unknown-Array"
+		}
+	}
+}
+
+// determineStoreCLIRaidRole determines the RAID role based on StoreCLI state and drive group
+func (s *StoreCLITool) determineStoreCLIRaidRole(disk *types.DiskInfo, state string, driveGroup string, raidArrays []types.RAIDInfo) {
+	stateLower := strings.ToLower(state)
+
+	switch {
+	case strings.Contains(stateLower, "onln") || strings.Contains(stateLower, "online"):
+		disk.RaidRole = "active"
+		disk.RaidArrayID = driveGroup
+		// Find and set the specific array
+		for _, raid := range raidArrays {
+			if raid.ArrayID == driveGroup {
+				break
+			}
+		}
+
+	case strings.Contains(stateLower, "ghs") || strings.Contains(stateLower, "global hot spare"):
+		disk.RaidRole = "hot_spare"
+		disk.IsGlobalSpare = true
+
+	case strings.Contains(stateLower, "dhs") || strings.Contains(stateLower, "dedicated hot spare"):
+		disk.RaidRole = "hot_spare"
+		disk.IsDedicatedSpare = true
+		disk.RaidArrayID = driveGroup
+
+	case strings.Contains(stateLower, "spare"):
+		disk.RaidRole = "spare"
+
+	case strings.Contains(stateLower, "failed") || strings.Contains(stateLower, "fail"):
+		disk.RaidRole = "failed"
+
+	case strings.Contains(stateLower, "rebuild") || strings.Contains(stateLower, "rbld"):
+		disk.RaidRole = "rebuilding"
+		disk.RaidArrayID = driveGroup
+
+	case strings.Contains(stateLower, "ugood") || strings.Contains(stateLower, "unconfigured good"):
+		disk.RaidRole = "unconfigured"
+
+	case strings.Contains(stateLower, "ubad") || strings.Contains(stateLower, "unconfigured bad"):
+		disk.RaidRole = "unconfigured"
+		disk.Health = "FAILED"
+
+	case strings.Contains(stateLower, "offln") || strings.Contains(stateLower, "offline"):
+		disk.RaidRole = "failed"
+
+	default:
+		disk.RaidRole = "unknown"
+	}
+}
+
+// calculateStoreCLIDiskUtilization calculates disk utilization for StoreCLI managed disks
+func (s *StoreCLITool) calculateStoreCLIDiskUtilization(disk *types.DiskInfo, array *types.RAIDInfo) {
+	if disk.Capacity <= 0 {
+		return
+	}
+
+	// Handle spare drives differently - they are not actively used in arrays
+	if disk.RaidRole == "hot_spare" || disk.RaidRole == "spare" ||
+		disk.IsGlobalSpare || disk.IsDedicatedSpare {
+		// Spare drives are reserved but not actively used
+		disk.UsedBytes = 0
+		disk.AvailableBytes = disk.Capacity
+		disk.UsagePercentage = 0.0
+		disk.Mountpoint = "SPARE"
+		disk.Filesystem = fmt.Sprintf("%s-Spare", strings.ToUpper(string(disk.RaidRole[0]))+disk.RaidRole[1:])
+		return
+	}
+
+	// Handle failed or rebuilding drives
+	if disk.RaidRole == "failed" {
+		disk.UsedBytes = 0
+		disk.AvailableBytes = 0 // Failed drives have no available space
+		disk.UsagePercentage = 0.0
+		disk.Mountpoint = "FAILED"
+		disk.Filesystem = "Failed-Drive"
+		return
+	}
+
+	if disk.RaidRole == "rebuilding" {
+		// During rebuild, assume partial utilization
+		disk.UsagePercentage = 50.0 // Rebuilding state
+		disk.Mountpoint = "REBUILDING"
+		disk.Filesystem = "Rebuilding-Drive"
+	}
+
+	// Handle unconfigured drives
+	if disk.RaidRole == "unconfigured" {
+		disk.UsedBytes = 0
+		disk.AvailableBytes = disk.Capacity
+		disk.UsagePercentage = 0.0
+		disk.Mountpoint = "UNCONFIGURED"
+		disk.Filesystem = "Unconfigured"
+		return
+	}
+
+	// For active drives in RAID arrays, calculate based on RAID level
+	if array == nil || array.Size <= 0 {
+		return
+	}
+
+	// Parse RAID level to understand data distribution
+	raidLevel := strings.ToLower(array.RaidLevel)
+	numDrives := array.NumDrives
+
+	if numDrives <= 0 {
+		return
+	}
+
+	var usableCapacityPerDisk int64
+	var utilizationPercentage float64
+
+	switch {
+	case strings.Contains(raidLevel, "raid0") || strings.Contains(raidLevel, "r0"):
+		// RAID 0: All disk space is used for data
+		usableCapacityPerDisk = array.Size / int64(numDrives)
+		utilizationPercentage = 100.0
+
+	case strings.Contains(raidLevel, "raid1") || strings.Contains(raidLevel, "r1"):
+		// RAID 1: 50% of disk space is used (mirrored)
+		usableCapacityPerDisk = disk.Capacity / 2
+		utilizationPercentage = 50.0
+
+	case strings.Contains(raidLevel, "raid5") || strings.Contains(raidLevel, "r5"):
+		// RAID 5: (n-1)/n of disk space is used for data, 1/n for parity
+		usableCapacityPerDisk = array.Size / int64(numDrives-1) * int64(numDrives) / int64(numDrives)
+		utilizationPercentage = float64(numDrives-1) / float64(numDrives) * 100.0
+
+	case strings.Contains(raidLevel, "raid6") || strings.Contains(raidLevel, "r6"):
+		// RAID 6: (n-2)/n of disk space is used for data, 2/n for parity
+		usableCapacityPerDisk = array.Size / int64(numDrives-2) * int64(numDrives) / int64(numDrives)
+		utilizationPercentage = float64(numDrives-2) / float64(numDrives) * 100.0
+
+	case strings.Contains(raidLevel, "raid10") || strings.Contains(raidLevel, "r10"):
+		// RAID 10: 50% of disk space is used (striped mirrors)
+		usableCapacityPerDisk = disk.Capacity / 2
+		utilizationPercentage = 50.0
+
+	default:
+		// Unknown RAID level, assume full utilization for active drives
+		usableCapacityPerDisk = disk.Capacity
+		utilizationPercentage = 100.0
+	}
+
+	// Set the calculated values for active drives
+	if disk.RaidRole == "active" {
+		disk.UsedBytes = usableCapacityPerDisk
+		disk.AvailableBytes = disk.Capacity - usableCapacityPerDisk
+		disk.UsagePercentage = utilizationPercentage
+		disk.Mountpoint = fmt.Sprintf("RAID-%s", array.ArrayID)
+		disk.Filesystem = fmt.Sprintf("%s-Array", array.RaidLevel)
+	}
+}
+
+// GetSpareDisks returns information about spare drives
+func (s *StoreCLITool) GetSpareDisks() []types.DiskInfo {
+	allDisks := s.GetRAIDDisks()
+	var spareDisks []types.DiskInfo
+
+	for _, disk := range allDisks {
+		if disk.RaidRole == "hot_spare" || disk.RaidRole == "spare" ||
+			disk.IsGlobalSpare || disk.IsDedicatedSpare {
+			spareDisks = append(spareDisks, disk)
+		}
+	}
+
+	log.Printf("Found %d spare disks using StoreCLI", len(spareDisks))
+	return spareDisks
+}
+
+// GetUnconfiguredDisks returns information about unconfigured drives
+func (s *StoreCLITool) GetUnconfiguredDisks() []types.DiskInfo {
+	allDisks := s.GetRAIDDisks()
+	var unconfiguredDisks []types.DiskInfo
+
+	for _, disk := range allDisks {
+		if disk.RaidRole == "unconfigured" {
+			unconfiguredDisks = append(unconfiguredDisks, disk)
+		}
+	}
+
+	log.Printf("Found %d unconfigured disks using StoreCLI", len(unconfiguredDisks))
+	return unconfiguredDisks
 }

@@ -263,6 +263,40 @@ func (c *Collector) updateComprehensiveDiskMetrics(disks []types.DiskInfo) {
 			).Set(float64(disk.Capacity))
 		}
 
+		// Filesystem usage metrics
+		if disk.UsedBytes > 0 {
+			c.metrics.DiskUsedBytes.WithLabelValues(
+				disk.Device,
+				disk.Serial,
+				disk.Model,
+				disk.Interface,
+				disk.Mountpoint,
+				disk.Filesystem,
+			).Set(float64(disk.UsedBytes))
+		}
+
+		if disk.AvailableBytes > 0 {
+			c.metrics.DiskAvailableBytes.WithLabelValues(
+				disk.Device,
+				disk.Serial,
+				disk.Model,
+				disk.Interface,
+				disk.Mountpoint,
+				disk.Filesystem,
+			).Set(float64(disk.AvailableBytes))
+		}
+
+		if disk.UsagePercentage > 0 {
+			c.metrics.DiskUsagePercentage.WithLabelValues(
+				disk.Device,
+				disk.Serial,
+				disk.Model,
+				disk.Interface,
+				disk.Mountpoint,
+				disk.Filesystem,
+			).Set(disk.UsagePercentage)
+		}
+
 		// Error metrics
 		if disk.ReallocatedSectors >= 0 {
 			c.metrics.DiskReallocatedSectors.WithLabelValues(
@@ -388,6 +422,45 @@ func (c *Collector) updateComprehensiveDiskMetrics(disks []types.DiskInfo) {
 				disk.Model,
 			).Set(float64(disk.ErrorLogEntries))
 		}
+
+		// RAID role and spare drive metrics
+		if disk.RaidRole != "" {
+			roleValue := getRaidRoleValue(disk.RaidRole)
+			c.metrics.DiskRaidRole.WithLabelValues(
+				disk.Device,
+				disk.Serial,
+				disk.Model,
+			).Set(float64(roleValue))
+		}
+
+		// Spare drive status metrics
+		isSpare := disk.RaidRole == "hot_spare" || disk.RaidRole == "spare" ||
+			disk.RaidRole == "commissioned_spare" || disk.RaidRole == "emergency_spare" ||
+			disk.IsCommissionedSpare || disk.IsEmergencySpare || disk.IsGlobalSpare
+
+		c.metrics.DiskIsSpare.WithLabelValues(
+			disk.Device,
+			disk.Serial,
+			disk.Model,
+		).Set(boolToFloat(isSpare))
+
+		c.metrics.DiskIsCommissionedSpare.WithLabelValues(
+			disk.Device,
+			disk.Serial,
+			disk.Model,
+		).Set(boolToFloat(disk.IsCommissionedSpare))
+
+		c.metrics.DiskIsEmergencySpare.WithLabelValues(
+			disk.Device,
+			disk.Serial,
+			disk.Model,
+		).Set(boolToFloat(disk.IsEmergencySpare))
+
+		c.metrics.DiskIsGlobalSpare.WithLabelValues(
+			disk.Device,
+			disk.Serial,
+			disk.Model,
+		).Set(boolToFloat(disk.IsGlobalSpare))
 	}
 }
 
@@ -402,5 +475,23 @@ func getHealthStatusValue(health string) int {
 		return int(types.HealthStatusCritical)
 	default:
 		return int(types.HealthStatusUnknown)
+	}
+}
+
+// getRaidRoleValue converts RAID role string to numeric value
+func getRaidRoleValue(role string) int {
+	switch role {
+	case "active":
+		return int(types.RaidRoleActive)
+	case "spare", "hot_spare", "commissioned_spare", "emergency_spare":
+		return int(types.RaidRoleSpare)
+	case "failed":
+		return int(types.RaidRoleFailed)
+	case "rebuilding":
+		return int(types.RaidRoleRebuilding)
+	case "unconfigured":
+		return int(types.RaidRoleUnconfigured)
+	default:
+		return int(types.RaidRoleUnknown)
 	}
 }

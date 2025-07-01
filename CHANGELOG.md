@@ -19,6 +19,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.0.11] - 2025-07-01
+
+### Added
+
+- **Inventory and discovery metrics** - Added comprehensive system overview metrics for better disk enumeration
+  - `disk_info` - Complete disk inventory with all metadata (device, type, serial, model, vendor, interface, location, RPM, capacity)
+  - `disk_present` - Simple disk presence indicator for monitoring disk additions/removals
+  - `system_total_disks` - Total count of disks detected in the system
+  - `system_total_raid_arrays` - Total count of RAID arrays detected in the system
+  - `system_monitoring_tools_available` - Availability and versions of monitoring tools
+
+- **macOS RAID support enhancement** - Added appropriate RAID tool support for macOS systems
+  - **ZFS support** - OpenZFS integration for macOS systems that have ZFS installed
+  - **Hardware RAID exclusion** - Correctly excluded enterprise RAID controllers (MegaCLI, StoreCLI, Arcconf) that don't run on Darwin/macOS
+  - **Realistic tool selection** - Limited to tools that actually exist and make sense on macOS: diskutil, smartctl, nvme, zpool
+  - **Enhanced disk merging** - Added `mergeDisks()` method for consistent disk information consolidation
+
+### Fixed
+
+- **Critical RAID disk detection issue** - Fixed major gap where individual physical disks in hardware RAID arrays were not being detected
+  - **MegaCLI integration** - Now calls both `GetRAIDArrays()` and `GetRAIDDisks()` to enumerate individual disks within RAID arrays
+  - **Complete RAID disk visibility** - Tools like `lsblk` only see RAID logical volumes, but hardware RAID tools can access the actual physical disks
+  - **Enhanced disk merging** - Improved `mergeDisks()` method to preserve RAID-specific metadata (Type, Location, Interface)
+  - **Consistent pattern** - All RAID tools (MegaCLI, StoreCLI, Arcconf, ZFS) now use `mergeDisks()` instead of `append()` to prevent duplicates
+  - **Cross-platform fix** - Applied same disk detection improvements to Linux and macOS systems
+
+- **Disk information merging** - Enhanced disk metadata preservation during information consolidation
+  - **RAID metadata preservation** - Fixed merging to retain RAID-specific fields like disk location (e.g., "Enc:1 Slot:2")
+  - **Interface information** - Preserved disk interface details from specialized tools
+  - **Type classification** - Maintained disk type information (regular, raid, nvme, etc.) during merging
+
+### Changed
+
+- **RAID tool interface unification** - Major refactoring to simplify and consolidate RAID tool interfaces
+  - **Unified GetRAIDDisks() method** - Merged `GetRAIDDisksWithUtilization()` functionality into the main `GetRAIDDisks()` method for both StoreCLI and MegaCLI tools
+  - **Removed redundant methods** - Eliminated duplicate `GetRAIDDisksWithUtilization()` methods from all RAID tools to reduce code complexity
+  - **Enhanced utilization calculation** - Integrated per-disk space utilization and RAID role detection directly into the main disk enumeration methods
+  - **Consistent interface compliance** - All RAID tools now use the same unified `RAIDToolInterface` with consistent method signatures
+  - **Improved parsing logic** - Enhanced StoreCLI and MegaCLI parsing to handle both summary table and detailed per-drive output formats
+
+- **RAID role detection improvements** - Enhanced detection and classification of disk roles within RAID arrays
+  - **Comprehensive spare detection** - Improved detection of hot spares, commissioned spares, emergency spares, and global spares
+  - **Unconfigured disk handling** - Better identification and reporting of unconfigured drives available for RAID configuration
+  - **Failed disk detection** - Enhanced parsing to accurately identify and report failed drives within RAID arrays
+  - **Real-world output compatibility** - Updated parsing logic to match actual StoreCLI and MegaCLI command output formats
+
+- **Code architecture improvements** - Refactored RAID tool implementations for better maintainability and consistency
+  - **Fallback utilization helpers** - Added `calculateBasicUtilization()` and `calculateBasicMegaCLIUtilization()` helpers for graceful degradation
+  - **Unified method calls** - Updated `GetSpareDisks()` and `GetUnconfiguredDisks()` to use the consolidated `GetRAIDDisks()` method
+  - **Cross-platform consistency** - Applied interface changes consistently across Linux, macOS, and Windows implementations
+  - **Test suite compatibility** - Maintained all existing test coverage while updating interface usage
+
+- **Architecture clarification** - Added comprehensive comments explaining RAID disk detection logic
+  - **Hardware RAID explanation** - Documented why hardware RAID controllers hide disks from OS tools
+  - **Tool necessity** - Explained why specialized RAID tools are required to access individual physical disks
+  - **Detection strategy** - Clarified the multi-layered approach: OS tools + RAID tools + software storage tools
+
+### Platform Support
+
+- **Linux** - Complete RAID disk detection with all hardware and software RAID tools
+- **macOS** - Appropriate tool selection with ZFS support, excluding non-applicable enterprise RAID controllers
+- **Windows** - Maintained existing limited implementation (unchanged as requested)
+
 ## [0.0.9] - 2025-06-30
 
 ### Added

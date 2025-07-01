@@ -16,6 +16,9 @@ type Metrics struct {
 
 	// New comprehensive metrics
 	DiskCapacityBytes       *prometheus.GaugeVec
+	DiskUsedBytes           *prometheus.GaugeVec
+	DiskAvailableBytes      *prometheus.GaugeVec
+	DiskUsagePercentage     *prometheus.GaugeVec
 	DiskPowerCycles         *prometheus.GaugeVec
 	DiskReallocatedSectors  *prometheus.GaugeVec
 	DiskPendingSectors      *prometheus.GaugeVec
@@ -45,6 +48,13 @@ type Metrics struct {
 	RaidArrayRebuildProgress *prometheus.GaugeVec
 	RaidArrayScrubProgress   *prometheus.GaugeVec
 
+	// RAID disk role metrics
+	DiskRaidRole            *prometheus.GaugeVec // 0=unconfigured, 1=active, 2=spare, 3=failed, 4=rebuilding
+	DiskIsSpare             *prometheus.GaugeVec // 1 if disk is any type of spare, 0 otherwise
+	DiskIsCommissionedSpare *prometheus.GaugeVec // 1 if commissioned spare, 0 otherwise
+	DiskIsEmergencySpare    *prometheus.GaugeVec // 1 if emergency spare, 0 otherwise
+	DiskIsGlobalSpare       *prometheus.GaugeVec // 1 if global spare, 0 otherwise
+
 	// Software RAID metrics
 	SoftwareRaidArrayStatus  *prometheus.GaugeVec
 	SoftwareRaidSyncProgress *prometheus.GaugeVec
@@ -65,6 +75,13 @@ type Metrics struct {
 	RaidBatteryDesignCapacity   *prometheus.GaugeVec
 	RaidBatteryDesignVoltage    *prometheus.GaugeVec
 	RaidBatteryAutoLearnPeriod  *prometheus.GaugeVec
+
+	// Inventory and system overview metrics
+	DiskInfo              *prometheus.GaugeVec
+	DiskPresent           *prometheus.GaugeVec
+	SystemTotalDisks      prometheus.Gauge
+	SystemTotalRAIDArrays prometheus.Gauge
+	SystemToolsAvailable  *prometheus.GaugeVec
 }
 
 // New creates and registers all metrics
@@ -120,6 +137,27 @@ func New() *Metrics {
 				Help: "Disk capacity in bytes",
 			},
 			[]string{"device", "serial", "model", "interface"},
+		),
+		DiskUsedBytes: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "disk_used_bytes",
+				Help: "Disk used space in bytes",
+			},
+			[]string{"device", "serial", "model", "interface", "mountpoint", "filesystem"},
+		),
+		DiskAvailableBytes: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "disk_available_bytes",
+				Help: "Disk available space in bytes",
+			},
+			[]string{"device", "serial", "model", "interface", "mountpoint", "filesystem"},
+		),
+		DiskUsagePercentage: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "disk_usage_percentage",
+				Help: "Disk usage percentage (0-100)",
+			},
+			[]string{"device", "serial", "model", "interface", "mountpoint", "filesystem"},
 		),
 		DiskPowerCycles: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -294,6 +332,43 @@ func New() *Metrics {
 			[]string{"array_id", "raid_level", "type"},
 		),
 
+		// RAID disk role metrics
+		DiskRaidRole: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "disk_raid_role",
+				Help: "RAID disk role (0=unconfigured, 1=active, 2=spare, 3=failed, 4=rebuilding)",
+			},
+			[]string{"device", "serial", "model"},
+		),
+		DiskIsSpare: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "disk_is_spare",
+				Help: "Whether the disk is a spare (1=yes, 0=no)",
+			},
+			[]string{"device", "serial", "model"},
+		),
+		DiskIsCommissionedSpare: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "disk_is_commissioned_spare",
+				Help: "Whether the disk is a commissioned spare (1=yes, 0=no)",
+			},
+			[]string{"device", "serial", "model"},
+		),
+		DiskIsEmergencySpare: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "disk_is_emergency_spare",
+				Help: "Whether the disk is an emergency spare (1=yes, 0=no)",
+			},
+			[]string{"device", "serial", "model"},
+		),
+		DiskIsGlobalSpare: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "disk_is_global_spare",
+				Help: "Whether the disk is a global spare (1=yes, 0=no)",
+			},
+			[]string{"device", "serial", "model"},
+		),
+
 		// Software RAID metrics
 		SoftwareRaidArrayStatus: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -416,6 +491,41 @@ func New() *Metrics {
 			},
 			[]string{"adapter_id", "battery_type", "controller"},
 		),
+
+		// Inventory and system overview metrics
+		DiskInfo: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "disk_info",
+				Help: "Disk information and presence (always 1 when disk is present)",
+			},
+			[]string{"device", "type", "serial", "model", "vendor", "interface", "location", "rpm", "capacity_gb"},
+		),
+		DiskPresent: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "disk_present",
+				Help: "Whether a disk is present in the system (1=present, 0=absent)",
+			},
+			[]string{"device", "type", "serial", "model"},
+		),
+		SystemTotalDisks: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Name: "system_total_disks",
+				Help: "Total number of disks detected in the system",
+			},
+		),
+		SystemTotalRAIDArrays: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Name: "system_total_raid_arrays",
+				Help: "Total number of RAID arrays detected in the system",
+			},
+		),
+		SystemToolsAvailable: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "system_monitoring_tools_available",
+				Help: "Whether monitoring tools are available (1=available, 0=not available)",
+			},
+			[]string{"tool", "version"},
+		),
 	}
 
 	// Register all metrics
@@ -430,6 +540,9 @@ func New() *Metrics {
 
 		// New comprehensive metrics
 		m.DiskCapacityBytes,
+		m.DiskUsedBytes,
+		m.DiskAvailableBytes,
+		m.DiskUsagePercentage,
 		m.DiskPowerCycles,
 		m.DiskReallocatedSectors,
 		m.DiskPendingSectors,
@@ -459,6 +572,13 @@ func New() *Metrics {
 		m.RaidArrayRebuildProgress,
 		m.RaidArrayScrubProgress,
 
+		// RAID disk role metrics
+		m.DiskRaidRole,
+		m.DiskIsSpare,
+		m.DiskIsCommissionedSpare,
+		m.DiskIsEmergencySpare,
+		m.DiskIsGlobalSpare,
+
 		// Software RAID metrics
 		m.SoftwareRaidArrayStatus,
 		m.SoftwareRaidSyncProgress,
@@ -479,6 +599,13 @@ func New() *Metrics {
 		m.RaidBatteryDesignCapacity,
 		m.RaidBatteryDesignVoltage,
 		m.RaidBatteryAutoLearnPeriod,
+
+		// Inventory and system overview metrics
+		m.DiskInfo,
+		m.DiskPresent,
+		m.SystemTotalDisks,
+		m.SystemTotalRAIDArrays,
+		m.SystemToolsAvailable,
 	)
 
 	return m
@@ -486,6 +613,13 @@ func New() *Metrics {
 
 // Reset clears all metrics
 func (m *Metrics) Reset() {
+	// Inventory and system overview metrics
+	m.DiskInfo.Reset()
+	m.DiskPresent.Reset()
+	m.SystemTotalDisks.Set(0)
+	m.SystemTotalRAIDArrays.Set(0)
+	m.SystemToolsAvailable.Reset()
+
 	// Existing metrics
 	m.DiskHealthStatus.Reset()
 	m.DiskTemperature.Reset()
@@ -495,6 +629,9 @@ func (m *Metrics) Reset() {
 
 	// New comprehensive metrics
 	m.DiskCapacityBytes.Reset()
+	m.DiskUsedBytes.Reset()
+	m.DiskAvailableBytes.Reset()
+	m.DiskUsagePercentage.Reset()
 	m.DiskPowerCycles.Reset()
 	m.DiskReallocatedSectors.Reset()
 	m.DiskPendingSectors.Reset()
@@ -523,6 +660,13 @@ func (m *Metrics) Reset() {
 	m.RaidArrayNumFailedDrives.Reset()
 	m.RaidArrayRebuildProgress.Reset()
 	m.RaidArrayScrubProgress.Reset()
+
+	// RAID disk role metrics
+	m.DiskRaidRole.Reset()
+	m.DiskIsSpare.Reset()
+	m.DiskIsCommissionedSpare.Reset()
+	m.DiskIsEmergencySpare.Reset()
+	m.DiskIsGlobalSpare.Reset()
 
 	// Software RAID metrics
 	m.SoftwareRaidArrayStatus.Reset()

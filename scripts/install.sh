@@ -149,7 +149,6 @@ download_binary() {
     exit 1
   fi
 
-  # Correct GitHub releases download URL format:
   # https://github.com/OWNER/REPO/releases/download/TAG/ASSET_NAME
   local download_url="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/${binary_name}"
   local temp_file="/tmp/${binary_name}"

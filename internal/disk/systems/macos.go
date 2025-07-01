@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"disk-health-exporter/internal/disk/tools"
 	"disk-health-exporter/internal/utils"
 	"disk-health-exporter/pkg/types"
 )
@@ -18,7 +19,7 @@ type MacOSSystem struct {
 		diskutil bool
 		smartctl bool
 		nvme     bool
-		zpool    bool
+		zpool    bool // ZFS is available on macOS via OpenZFS
 	}
 }
 
@@ -63,6 +64,20 @@ func (m *MacOSSystem) GetDisks() ([]types.DiskInfo, []types.RAIDInfo) {
 			if smartInfo.Device != "" {
 				allDisks[i] = m.mergeDiskInfo(disk, smartInfo)
 			}
+		}
+	}
+
+	// Handle ZFS pools (ZFS is available on macOS via OpenZFS)
+	if m.toolsAvailable.zpool {
+		zpoolTool := tools.NewZpoolTool()
+		if zpoolTool.IsAvailable() {
+			zfsPools := zpoolTool.GetZFSPools()
+			// Convert ZFS pools to RAIDInfo format (they're already in that format)
+			allRAIDs = append(allRAIDs, zfsPools...)
+			zfsDisks := zpoolTool.GetDisks()
+			filtered := m.filterDisks(zfsDisks)
+			allDisks = m.mergeDisks(allDisks, filtered)
+			log.Printf("Found %d ZFS pools and %d ZFS disks via zpool", len(zfsPools), len(filtered))
 		}
 	}
 
@@ -223,6 +238,9 @@ func (m *MacOSSystem) getDiskutilInfo(diskID string) types.DiskInfo {
 	disk.SmartEnabled = true
 	disk.SmartHealthy = true
 
+	// Get filesystem usage information
+	m.addFilesystemUsage(&disk, diskID)
+
 	return disk
 }
 
@@ -352,6 +370,59 @@ func (m *MacOSSystem) mergeDiskInfo(existing, smart types.DiskInfo) types.DiskIn
 	return merged
 }
 
+// mergeDisks merges disk information from different sources
+func (m *MacOSSystem) mergeDisks(existing []types.DiskInfo, newDisks []types.DiskInfo) []types.DiskInfo {
+	diskMap := make(map[string]types.DiskInfo)
+
+	// Add existing disks to map
+	for _, disk := range existing {
+		diskMap[disk.Device] = disk
+	}
+
+	// Merge or add new disks
+	for _, newDisk := range newDisks {
+		if existingDisk, exists := diskMap[newDisk.Device]; exists {
+			// Merge information (new information takes precedence for non-empty fields)
+			merged := existingDisk
+			if newDisk.Model != "" {
+				merged.Model = newDisk.Model
+			}
+			if newDisk.Serial != "" {
+				merged.Serial = newDisk.Serial
+			}
+			if newDisk.Health != "" {
+				merged.Health = newDisk.Health
+			}
+			if newDisk.Temperature > 0 {
+				merged.Temperature = newDisk.Temperature
+			}
+			if newDisk.Capacity > 0 {
+				merged.Capacity = newDisk.Capacity
+			}
+			if newDisk.Type != "" {
+				merged.Type = newDisk.Type
+			}
+			if newDisk.Location != "" {
+				merged.Location = newDisk.Location
+			}
+			if newDisk.Interface != "" {
+				merged.Interface = newDisk.Interface
+			}
+			diskMap[newDisk.Device] = merged
+		} else {
+			diskMap[newDisk.Device] = newDisk
+		}
+	}
+
+	// Convert back to slice
+	var result []types.DiskInfo
+	for _, disk := range diskMap {
+		result = append(result, disk)
+	}
+
+	return result
+}
+
 // filterDisks filters disks based on target and ignore patterns
 func (m *MacOSSystem) filterDisks(disks []types.DiskInfo) []types.DiskInfo {
 	var filtered []types.DiskInfo
@@ -410,6 +481,112 @@ func (m *MacOSSystem) GetToolInfo() types.ToolInfo {
 			toolInfo.SmartCtlVersion = version
 		}
 	}
+	if toolInfo.Zpool {
+		if version, err := utils.GetToolVersion("zpool", "version"); err == nil {
+			toolInfo.ZpoolVersion = version
+		}
+	}
 
 	return toolInfo
+}
+
+// addFilesystemUsage adds filesystem usage information to a disk using diskutil
+func (m *MacOSSystem) addFilesystemUsage(disk *types.DiskInfo, diskID string) {
+	// First, check if this disk has any mounted volumes
+	cmd := exec.Command("diskutil", "list", diskID)
+	output, err := cmd.Output()
+	if err != nil {
+		return
+	}
+
+	// Parse the partition list to find mounted volumes
+	lines := strings.Split(string(output), "\n")
+	var mountedPartition string
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		// Look for partition lines (they start with numbers and contain volume info)
+		if strings.Contains(line, diskID+"s") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				partitionID := fields[1]
+				// Check if this partition is mounted
+				if m.isPartitionMounted(partitionID) {
+					mountedPartition = partitionID
+					break
+				}
+			}
+		}
+	}
+
+	// If we found a mounted partition, get its info
+	if mountedPartition != "" {
+		cmd = exec.Command("diskutil", "info", mountedPartition)
+		output, err = cmd.Output()
+		if err != nil {
+			return
+		}
+
+		outputStr := string(output)
+		lines = strings.Split(outputStr, "\n")
+
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "Mount Point:") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					mountpoint := strings.TrimSpace(parts[1])
+					if mountpoint != "Not applicable (no filesystem)" {
+						disk.Mountpoint = mountpoint
+					}
+				}
+			}
+			if strings.HasPrefix(line, "File System Personality:") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					disk.Filesystem = strings.TrimSpace(parts[1])
+				}
+			}
+		}
+
+		// If we have a mountpoint, get usage stats using df
+		if disk.Mountpoint != "" {
+			cmd = exec.Command("df", "-k", disk.Mountpoint)
+			output, err = cmd.Output()
+			if err != nil {
+				return
+			}
+
+			lines = strings.Split(strings.TrimSpace(string(output)), "\n")
+			if len(lines) >= 2 {
+				fields := strings.Fields(lines[1])
+				if len(fields) >= 4 {
+					// df -k output: Filesystem 1K-blocks Used Available Capacity Mounted on
+					if used, err := strconv.ParseInt(fields[2], 10, 64); err == nil {
+						if avail, err := strconv.ParseInt(fields[3], 10, 64); err == nil {
+							disk.UsedBytes = used * 1024       // Convert from KB to bytes
+							disk.AvailableBytes = avail * 1024 // Convert from KB to bytes
+							total := disk.UsedBytes + disk.AvailableBytes
+							if total > 0 {
+								disk.UsagePercentage = float64(disk.UsedBytes) / float64(total) * 100
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// isPartitionMounted checks if a partition is currently mounted
+func (m *MacOSSystem) isPartitionMounted(partitionID string) bool {
+	cmd := exec.Command("diskutil", "info", partitionID)
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+
+	outputStr := string(output)
+	return strings.Contains(outputStr, "Mount Point:") &&
+		!strings.Contains(outputStr, "Not applicable (no filesystem)")
 }

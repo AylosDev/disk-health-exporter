@@ -97,7 +97,7 @@ func (l *LinuxSystem) GetDisks() ([]types.DiskInfo, []types.RAIDInfo) {
 		if megaTool.IsAvailable() {
 			raids := megaTool.GetRAIDArrays()
 			allRAIDs = append(allRAIDs, raids...)
-			// Also get individual disks from RAID arrays
+			// Get individual disks with utilization calculations
 			raidDisks := megaTool.GetRAIDDisks()
 			filtered := l.filterDisks(raidDisks)
 			allDisks = l.mergeDisks(allDisks, filtered)
