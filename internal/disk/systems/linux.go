@@ -97,7 +97,11 @@ func (l *LinuxSystem) GetDisks() ([]types.DiskInfo, []types.RAIDInfo) {
 		if megaTool.IsAvailable() {
 			raids := megaTool.GetRAIDArrays()
 			allRAIDs = append(allRAIDs, raids...)
-			log.Printf("Found %d hardware RAID arrays via MegaCLI", len(raids))
+			// Also get individual disks from RAID arrays
+			raidDisks := megaTool.GetRAIDDisks()
+			filtered := l.filterDisks(raidDisks)
+			allDisks = l.mergeDisks(allDisks, filtered)
+			log.Printf("Found %d hardware RAID arrays and %d RAID disks via MegaCLI", len(raids), len(filtered))
 		}
 	}
 
@@ -108,7 +112,7 @@ func (l *LinuxSystem) GetDisks() ([]types.DiskInfo, []types.RAIDInfo) {
 			allRAIDs = append(allRAIDs, raids...)
 			raidDisks := storeTool.GetRAIDDisks()
 			filtered := l.filterDisks(raidDisks)
-			allDisks = append(allDisks, filtered...)
+			allDisks = l.mergeDisks(allDisks, filtered)
 			log.Printf("Found %d hardware RAID arrays and %d RAID disks via StoreCLI", len(raids), len(filtered))
 		}
 	}
@@ -120,7 +124,7 @@ func (l *LinuxSystem) GetDisks() ([]types.DiskInfo, []types.RAIDInfo) {
 			allRAIDs = append(allRAIDs, raids...)
 			raidDisks := arcconfTool.GetRAIDDisks()
 			filtered := l.filterDisks(raidDisks)
-			allDisks = append(allDisks, filtered...)
+			allDisks = l.mergeDisks(allDisks, filtered)
 			log.Printf("Found %d hardware RAID arrays and %d RAID disks via arcconf", len(raids), len(filtered))
 		}
 	}
@@ -154,7 +158,7 @@ func (l *LinuxSystem) GetDisks() ([]types.DiskInfo, []types.RAIDInfo) {
 			allRAIDs = append(allRAIDs, zfsPools...)
 			zfsDisks := zpoolTool.GetDisks()
 			filtered := l.filterDisks(zfsDisks)
-			allDisks = append(allDisks, filtered...)
+			allDisks = l.mergeDisks(allDisks, filtered)
 			log.Printf("Found %d ZFS pools and %d ZFS disks via zpool", len(zfsPools), len(filtered))
 		}
 	}
@@ -228,6 +232,15 @@ func (l *LinuxSystem) mergeDisks(existing []types.DiskInfo, newDisks []types.Dis
 			}
 			if newDisk.Capacity > 0 {
 				merged.Capacity = newDisk.Capacity
+			}
+			if newDisk.Type != "" {
+				merged.Type = newDisk.Type
+			}
+			if newDisk.Location != "" {
+				merged.Location = newDisk.Location
+			}
+			if newDisk.Interface != "" {
+				merged.Interface = newDisk.Interface
 			}
 			diskMap[newDisk.Device] = merged
 		} else {

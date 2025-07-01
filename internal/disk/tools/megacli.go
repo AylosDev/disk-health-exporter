@@ -62,8 +62,6 @@ func (m *MegaCLITool) GetRAIDArrays() []types.RAIDInfo {
 		return raidArrays
 	}
 
-	log.Printf("Detecting RAID arrays using MegaCLI...")
-
 	// Get RAID array information
 	output, err := exec.Command(m.command, "-LDInfo", "-Lall", "-aALL", "-NoLog").Output()
 	if err != nil {
@@ -162,8 +160,6 @@ func (m *MegaCLITool) GetRAIDDisks() []types.DiskInfo {
 	if !m.IsAvailable() {
 		return disks
 	}
-
-	log.Printf("Detecting RAID disks using MegaCLI...")
 
 	// Get physical disk information
 	output, err := exec.Command(m.command, "-PDList", "-aALL", "-NoLog").Output()
