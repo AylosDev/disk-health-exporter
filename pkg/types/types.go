@@ -200,6 +200,7 @@ type SoftwareRAIDInfo struct {
 // RAIDBatteryInfo represents RAID controller battery information
 type RAIDBatteryInfo struct {
 	AdapterID            int    // Adapter ID
+	ToolName             string // Tool used for detection (MegaCLI, StoreCLI, Arcconf)
 	BatteryType          string // Battery type (e.g., CVPM02)
 	Voltage              int    // Voltage in mV
 	Current              int    // Current in mA

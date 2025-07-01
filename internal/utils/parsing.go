@@ -28,11 +28,11 @@ func GetRaidStatusValue(state string) int {
 	state = strings.ToUpper(strings.TrimSpace(state))
 
 	switch {
-	case strings.Contains(state, "OPTIMAL"):
+	case strings.Contains(state, "OPTIMAL") || strings.Contains(state, "OPTL") || strings.Contains(state, "OK"):
 		return 1
-	case strings.Contains(state, "DEGRADED") || strings.Contains(state, "REBUILDING"):
+	case strings.Contains(state, "DEGRADED") || strings.Contains(state, "REBUILDING") || strings.Contains(state, "DGRD"):
 		return 2
-	case strings.Contains(state, "FAILED") || strings.Contains(state, "OFFLINE"):
+	case strings.Contains(state, "FAILED") || strings.Contains(state, "OFFLINE") || strings.Contains(state, "FAIL"):
 		return 3
 	default:
 		return 0
@@ -99,5 +99,29 @@ func GetSoftwareRAIDStatusValue(state string) int {
 		return 3
 	default:
 		return 0
+	}
+}
+
+// GetBatteryStatusValue converts battery status string to numeric value
+func GetBatteryStatusValue(status string) int {
+	switch strings.ToLower(status) {
+	case "optimal":
+		return 1
+	case "charging":
+		return 1
+	case "discharging":
+		return 2
+	case "warning":
+		return 2
+	case "low":
+		return 2
+	case "critical":
+		return 3
+	case "failed":
+		return 3
+	case "missing":
+		return 3
+	default:
+		return 0 // unknown
 	}
 }

@@ -38,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Normalizes RAID levels (0, 1, 5, 6, 10, 50, 60) to standard format
   - Maps controller states to health values (optimal=1, degraded=2, failed=3)
   - Full integration with Linux disk detection system
+  - **NEW**: Added SMART data enrichment for Arcconf RAID disks
+  - **NEW**: Added battery support for Adaptec RAID controllers
 
 - **Zpool support** - Added comprehensive ZFS pool and disk management
   - Detects ZFS pools via `zpool list` with health and capacity information
@@ -59,6 +61,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Complete version detection for all supported tools
   - Version information included in system tool reporting
 
+- **Tool-specific battery parsing** - Each RAID tool now handles its own battery format
+  - StoreCLI parses structured property-value battery output format
+  - MegaCLI maintains existing battery parsing for legacy format
+  - Arcconf added battery support with Adaptec-specific parsing
+  - Added `ToolName` field to `RAIDBatteryInfo` for proper tool identification
+
+- **Architectural improvements** - Refactored battery logic for better separation of concerns
+  - Moved battery business logic from collector to utility functions
+  - Created dedicated `utils/battery.go` for battery metric processing
+  - Collector now acts as thin orchestration layer without business logic
+  - Improved testability and maintainability of battery functionality
+
 ### Changed
 
 - **Improved StoreCLI device naming** - Enhanced RAID disk device identifiers for better clarity
@@ -74,6 +88,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Enhanced logging with tool-specific disk and array counts
 
 ### Fixed
+
+- **StoreCLI RAID status mapping** - Fixed RAID array status showing as 0 (unknown) instead of 1 (ok)
+  - Added support for "OPTL" (Optimal) state mapping to status value 1
+  - Added support for "DGRD" (Degraded) state mapping to status value 2
+  - Enhanced RAID state parsing to handle Dell PERC controller states correctly
+  - RAID arrays now properly show status 1 (ok) when in optimal state
+
+- **StoreCLI battery support** - Added comprehensive battery monitoring for StoreCLI controllers
+  - Battery information collection via `/c<id>/bbu show all` command
+  - Battery temperature, voltage, current, and status monitoring
+  - Support for battery replacement and capacity warnings
+  - Battery metrics now available for Dell PERC and other StoreCLI-compatible controllers
+
+- **StoreCLI SMART data collection** - Enhanced RAID disk monitoring with SMART data
+  - Added SMART data collection for RAID disks via controller interface
+  - Temperature monitoring for individual RAID disks (e.g., `raid-enc64-slot3`)
+  - SMART health status detection for RAID-attached drives
+  - Proper disk health status reporting instead of showing 0 (unknown)
 
 - **Tool interface compliance** - Ensured all tools properly implement required interfaces
   - StoreCLI implements `CombinedToolInterface` (both disk and RAID detection)

@@ -242,7 +242,9 @@ func (m *MegaCLITool) GetBatteryInfo(adapterID string) *types.RAIDBatteryInfo {
 
 	// Parse battery information
 	lines := strings.Split(string(output), "\n")
-	batteryInfo := &types.RAIDBatteryInfo{}
+	batteryInfo := &types.RAIDBatteryInfo{
+		ToolName: "MegaCLI",
+	}
 
 	// Parse adapter ID
 	if id, err := strconv.Atoi(adapterID); err == nil {

@@ -1,9 +1,11 @@
 package tools
 
 import (
+	"fmt"
 	"log"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"disk-health-exporter/internal/utils"
@@ -73,10 +75,114 @@ func (a *ArcconfTool) GetRAIDDisks() []types.DiskInfo {
 
 	for _, controllerID := range controllers {
 		controllerDisks := a.getDisksForController(controllerID)
+		// Enrich each disk with SMART data
+		for i := range controllerDisks {
+			a.enrichRAIDDiskWithSMART(&controllerDisks[i], controllerID)
+		}
 		disks = append(disks, controllerDisks...)
 	}
 
 	return disks
+}
+
+// GetBatteryInfo returns battery information for Arcconf controllers
+func (a *ArcconfTool) GetBatteryInfo(controllerID string) *types.RAIDBatteryInfo {
+	if !a.IsAvailable() {
+		return nil
+	}
+
+	// Get battery information using Arcconf
+	output, err := exec.Command("arcconf", "getconfig", controllerID, "bbu").Output()
+	if err != nil {
+		// Try alternative command format
+		output, err = exec.Command("arcconf", "getconfig", controllerID, "pd").Output()
+		if err != nil {
+			log.Printf("Error executing arcconf for battery info: %v", err)
+			return nil
+		}
+	}
+
+	// Parse battery information
+	batteryInfo := a.parseBatteryInfo(string(output), controllerID)
+	return batteryInfo
+}
+
+// parseBatteryInfo parses Arcconf battery output
+func (a *ArcconfTool) parseBatteryInfo(output, controllerID string) *types.RAIDBatteryInfo {
+	// Convert controllerID string to int
+	adapterID, err := strconv.Atoi(controllerID)
+	if err != nil {
+		adapterID = 0
+	}
+
+	battery := &types.RAIDBatteryInfo{
+		AdapterID: adapterID,
+		ToolName:  "Arcconf",
+	}
+
+	lines := strings.Split(output, "\n")
+	batterySection := false
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// Look for battery section
+		if strings.Contains(line, "Battery Information") || strings.Contains(line, "Battery Unit") {
+			batterySection = true
+			continue
+		}
+
+		if !batterySection {
+			continue
+		}
+
+		if strings.Contains(line, "Battery Type") {
+			parts := strings.Split(line, ":")
+			if len(parts) >= 2 {
+				battery.BatteryType = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "Voltage") {
+			// Extract voltage value
+			re := regexp.MustCompile(`(\d+\.?\d*)\s*V`)
+			matches := re.FindStringSubmatch(line)
+			if len(matches) > 1 {
+				if voltage, err := strconv.ParseFloat(matches[1], 64); err == nil {
+					battery.Voltage = int(voltage * 1000) // Convert to mV
+				}
+			}
+		} else if strings.Contains(line, "Current") {
+			// Extract current value
+			re := regexp.MustCompile(`(\d+\.?\d*)\s*A`)
+			matches := re.FindStringSubmatch(line)
+			if len(matches) > 1 {
+				if current, err := strconv.ParseFloat(matches[1], 64); err == nil {
+					battery.Current = int(current * 1000) // Convert to mA
+				}
+			}
+		} else if strings.Contains(line, "Temperature") {
+			// Extract temperature value
+			re := regexp.MustCompile(`(\d+\.?\d*)\s*C`)
+			matches := re.FindStringSubmatch(line)
+			if len(matches) > 1 {
+				if temp, err := strconv.ParseFloat(matches[1], 64); err == nil {
+					battery.Temperature = int(temp)
+				}
+			}
+		} else if strings.Contains(line, "Status") || strings.Contains(line, "State") {
+			parts := strings.Split(line, ":")
+			if len(parts) >= 2 {
+				battery.State = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "Replacement required") {
+			battery.ReplacementRequired = strings.Contains(strings.ToLower(line), "yes")
+		} else if strings.Contains(line, "Capacity Low") {
+			battery.RemainingCapacityLow = strings.Contains(strings.ToLower(line), "yes")
+		} else if strings.Contains(line, "Battery pack missing") {
+			battery.BatteryMissing = strings.Contains(strings.ToLower(line), "yes")
+		}
+	}
+
+	return battery
 }
 
 // getControllers gets list of available Adaptec controllers
@@ -168,6 +274,11 @@ func (a *ArcconfTool) getArraysForController(controllerID string) []types.RAIDIn
 			} else if strings.Contains(line, "Segment size") || strings.HasPrefix(line, "Group") {
 				// End of logical device section
 				if currentArray.ArrayID != "" {
+					// Try to get battery info for this controller
+					batteryInfo := a.GetBatteryInfo(controllerID)
+					if batteryInfo != nil {
+						currentArray.Battery = batteryInfo
+					}
 					arrays = append(arrays, currentArray)
 					inLogicalDevice = false
 				}
@@ -177,6 +288,11 @@ func (a *ArcconfTool) getArraysForController(controllerID string) []types.RAIDIn
 
 	// Add the last array if exists
 	if inLogicalDevice && currentArray.ArrayID != "" {
+		// Try to get battery info for this controller
+		batteryInfo := a.GetBatteryInfo(controllerID)
+		if batteryInfo != nil {
+			currentArray.Battery = batteryInfo
+		}
 		arrays = append(arrays, currentArray)
 	}
 
@@ -267,7 +383,67 @@ func (a *ArcconfTool) getDisksForController(controllerID string) []types.DiskInf
 		disks = append(disks, currentDisk)
 	}
 
+	// Enrich disks with SMART data
+	for i := range disks {
+		a.enrichRAIDDiskWithSMART(&disks[i], controllerID)
+	}
+
 	return disks
+}
+
+// enrichRAIDDiskWithSMART enriches RAID disk information with SMART data via Arcconf
+func (a *ArcconfTool) enrichRAIDDiskWithSMART(disk *types.DiskInfo, controllerID string) {
+	if !a.IsAvailable() {
+		return
+	}
+
+	// Parse device location for Arcconf format (e.g., "Channel 0, Device 0")
+	if !strings.Contains(disk.Location, "Channel") {
+		return
+	}
+
+	// Extract channel and device from location
+	re := regexp.MustCompile(`Channel\s+(\d+),\s+Device\s+(\d+)`)
+	matches := re.FindStringSubmatch(disk.Location)
+	if len(matches) < 3 {
+		return
+	}
+
+	channel := matches[1]
+	device := matches[2]
+
+	// Try to get SMART data via Arcconf
+	output, err := exec.Command("arcconf", "getconfig", controllerID, "pd", fmt.Sprintf("%s:%s", channel, device)).Output()
+	if err != nil {
+		return
+	}
+
+	// Parse output for SMART data
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		if strings.Contains(line, "Temperature") {
+			// Extract temperature value
+			re := regexp.MustCompile(`(\d+)\s*C`)
+			matches := re.FindStringSubmatch(line)
+			if len(matches) > 1 {
+				if temp, err := strconv.Atoi(matches[1]); err == nil {
+					disk.Temperature = float64(temp)
+				}
+			}
+		} else if strings.Contains(line, "S.M.A.R.T.") {
+			disk.SmartEnabled = !strings.Contains(strings.ToLower(line), "disabled")
+		} else if strings.Contains(line, "State") || strings.Contains(line, "Status") {
+			if strings.Contains(strings.ToLower(line), "online") || strings.Contains(strings.ToLower(line), "optimal") {
+				disk.SmartHealthy = true
+				disk.Health = "OK"
+			} else if strings.Contains(strings.ToLower(line), "failed") || strings.Contains(strings.ToLower(line), "critical") {
+				disk.SmartHealthy = false
+				disk.Health = "FAILED"
+			}
+		}
+	}
 }
 
 // normalizeRAIDLevel converts arcconf RAID level to standard format

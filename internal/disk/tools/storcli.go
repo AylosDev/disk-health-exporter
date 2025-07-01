@@ -6,6 +6,7 @@ import (
 	"log"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"disk-health-exporter/internal/utils"
@@ -103,10 +104,186 @@ func (s *StoreCLITool) GetRAIDDisks() []types.DiskInfo {
 	// Parse JSON output for disks
 	disks = s.parseStoreCLIDisksJSON(output)
 	if len(disks) > 0 {
+		// Enrich each disk with SMART data
+		for i := range disks {
+			s.enrichRAIDDiskWithSMART(&disks[i])
+		}
 		return disks
 	}
 
-	return s.getRAIDDisksPlainText()
+	// Fallback to plain text parsing
+	disks = s.getRAIDDisksPlainText()
+	// Enrich plain text disks with SMART data too
+	for i := range disks {
+		s.enrichRAIDDiskWithSMART(&disks[i])
+	}
+	return disks
+}
+
+// GetBatteryInfo returns battery information for StoreCLI controllers
+func (s *StoreCLITool) GetBatteryInfo(controllerID string) *types.RAIDBatteryInfo {
+	if !s.IsAvailable() {
+		return nil
+	}
+
+	// Get battery information using StoreCLI
+	output, err := exec.Command(s.command, fmt.Sprintf("/c%s", controllerID), "/bbu", "show", "all").Output()
+	if err != nil {
+		// Try alternative command format
+		output, err = exec.Command(s.command, fmt.Sprintf("/c%s", controllerID), "show", "bbu").Output()
+		if err != nil {
+			log.Printf("Error executing StoreCLI for battery info: %v", err)
+			return nil
+		}
+	}
+
+	// Parse battery information
+	batteryInfo := s.parseBatteryInfo(string(output), controllerID)
+	return batteryInfo
+}
+
+// parseBatteryInfo parses StoreCLI battery output
+func (s *StoreCLITool) parseBatteryInfo(output, controllerID string) *types.RAIDBatteryInfo {
+	// Convert controllerID string to int
+	adapterID, err := strconv.Atoi(controllerID)
+	if err != nil {
+		adapterID = 0
+	}
+
+	battery := &types.RAIDBatteryInfo{
+		AdapterID: adapterID,
+		ToolName:  "StoreCLI",
+	}
+
+	lines := strings.Split(output, "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// Parse basic BBU_Info section
+		if strings.Contains(line, "Type") && strings.Contains(line, "BBU") {
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				battery.BatteryType = parts[len(parts)-1]
+			}
+		} else if strings.Contains(line, "Voltage") && strings.Contains(line, "mV") {
+			// Extract voltage: "Voltage       3932 mV"
+			re := regexp.MustCompile(`Voltage\s+(\d+)\s*mV`)
+			matches := re.FindStringSubmatch(line)
+			if len(matches) > 1 {
+				if voltage, err := strconv.Atoi(matches[1]); err == nil {
+					battery.Voltage = voltage
+				}
+			}
+		} else if strings.Contains(line, "Current") && strings.Contains(line, "mA") {
+			// Extract current: "Current       0 mA"
+			re := regexp.MustCompile(`Current\s+(\d+)\s*mA`)
+			matches := re.FindStringSubmatch(line)
+			if len(matches) > 1 {
+				if current, err := strconv.Atoi(matches[1]); err == nil {
+					battery.Current = current
+				}
+			}
+		} else if strings.Contains(line, "Temperature") && strings.Contains(line, "C") {
+			// Extract temperature: "Temperature   28 C"
+			re := regexp.MustCompile(`Temperature\s+(\d+)\s*C`)
+			matches := re.FindStringSubmatch(line)
+			if len(matches) > 1 {
+				if temp, err := strconv.Atoi(matches[1]); err == nil {
+					battery.Temperature = temp
+				}
+			}
+		} else if strings.Contains(line, "Battery State") {
+			// Extract battery state: "Battery State Optimal"
+			parts := strings.Fields(line)
+			if len(parts) >= 3 {
+				battery.State = parts[2]
+			}
+		} else if strings.Contains(line, "Battery Pack Missing") {
+			battery.BatteryMissing = strings.Contains(line, "Yes")
+		} else if strings.Contains(line, "Replacement required") {
+			battery.ReplacementRequired = strings.Contains(line, "Yes")
+		} else if strings.Contains(line, "Remaining Capacity Low") {
+			battery.RemainingCapacityLow = strings.Contains(line, "Yes")
+		} else if strings.Contains(line, "Learn Cycle Active") {
+			battery.LearnCycleActive = strings.Contains(line, "Yes")
+		} else if strings.Contains(line, "Learn Cycle Status") {
+			parts := strings.Fields(line)
+			if len(parts) >= 4 {
+				battery.LearnCycleStatus = parts[3]
+			}
+		} else if strings.Contains(line, "Remaining Capacity") && strings.Contains(line, "mAh") {
+			// Extract remaining capacity: "Remaining Capacity       611 mAh"
+			re := regexp.MustCompile(`Remaining Capacity\s+(\d+)\s*mAh`)
+			matches := re.FindStringSubmatch(line)
+			if len(matches) > 1 {
+				if capacity, err := strconv.Atoi(matches[1]); err == nil {
+					battery.PackEnergy = capacity // Using PackEnergy field for mAh
+				}
+			}
+		} else if strings.Contains(line, "Full Charge Capacity") && strings.Contains(line, "mAh") {
+			// Extract full charge capacity: "Full Charge Capacity     611 mAh"
+			re := regexp.MustCompile(`Full Charge Capacity\s+(\d+)\s*mAh`)
+			matches := re.FindStringSubmatch(line)
+			if len(matches) > 1 {
+				if capacity, err := strconv.Atoi(matches[1]); err == nil {
+					battery.DesignCapacity = capacity
+				}
+			}
+		} else if strings.Contains(line, "Battery backup charge time") && strings.Contains(line, "hour") {
+			// Extract backup charge time: "Battery backup charge time 0 hour(s)"
+			re := regexp.MustCompile(`Battery backup charge time\s+(\d+)\s*hour`)
+			matches := re.FindStringSubmatch(line)
+			if len(matches) > 1 {
+				if hours, err := strconv.Atoi(matches[1]); err == nil {
+					battery.BackupChargeTime = hours
+				}
+			}
+		} else if strings.Contains(line, "Auto Learn Period") {
+			// Extract auto learn period: "Auto Learn Period    90d (7776000 seconds)"
+			re := regexp.MustCompile(`Auto Learn Period\s+(\d+)d`)
+			matches := re.FindStringSubmatch(line)
+			if len(matches) > 1 {
+				if days, err := strconv.Atoi(matches[1]); err == nil {
+					battery.AutoLearnPeriod = days
+				}
+			}
+		} else if strings.Contains(line, "Design Capacity") && strings.Contains(line, "mAh") {
+			// Extract design capacity: "Design Capacity         0 mAh"
+			re := regexp.MustCompile(`Design Capacity\s+(\d+)\s*mAh`)
+			matches := re.FindStringSubmatch(line)
+			if len(matches) > 1 {
+				if capacity, err := strconv.Atoi(matches[1]); err == nil {
+					if capacity > 0 { // Only use if non-zero
+						battery.DesignCapacity = capacity
+					}
+				}
+			}
+		} else if strings.Contains(line, "Design Voltage") && strings.Contains(line, "mV") {
+			// Extract design voltage: "Design Voltage          0 mV"
+			re := regexp.MustCompile(`Design Voltage\s+(\d+)\s*mV`)
+			matches := re.FindStringSubmatch(line)
+			if len(matches) > 1 {
+				if voltage, err := strconv.Atoi(matches[1]); err == nil {
+					if voltage > 0 { // Only use if non-zero
+						battery.DesignVoltage = voltage
+					}
+				}
+			}
+		} else if strings.Contains(line, "Serial Number") {
+			parts := strings.Fields(line)
+			if len(parts) >= 3 && parts[2] != "0" {
+				battery.SerialNumber = parts[2]
+			}
+		} else if strings.Contains(line, "Manufacture Name") {
+			parts := strings.Fields(line)
+			if len(parts) >= 3 {
+				battery.ManufactureName = strings.Join(parts[2:], " ")
+			}
+		}
+	}
+
+	return battery
 }
 
 // parseStoreCLIJSON parses StoreCLI JSON output for RAID arrays
@@ -125,7 +302,7 @@ func (s *StoreCLITool) parseStoreCLIJSON(output []byte) []types.RAIDInfo {
 		return raidArrays
 	}
 
-	for _, controller := range controllers {
+	for i, controller := range controllers {
 		ctrlMap, ok := controller.(map[string]interface{})
 		if !ok {
 			continue
@@ -133,6 +310,7 @@ func (s *StoreCLITool) parseStoreCLIJSON(output []byte) []types.RAIDInfo {
 
 		// Extract controller information
 		var controllerName string
+		var controllerID = fmt.Sprintf("%d", i) // Use index as controller ID
 		if responseData, exists := ctrlMap["Response Data"]; exists {
 			if dataMap, ok := responseData.(map[string]interface{}); ok {
 				if productName, exists := dataMap["Product Name"]; exists {
@@ -150,6 +328,11 @@ func (s *StoreCLITool) parseStoreCLIJSON(output []byte) []types.RAIDInfo {
 							if vdMap, ok := vd.(map[string]interface{}); ok {
 								raid := s.parseVirtualDrive(vdMap, controllerName)
 								if raid.ArrayID != "" {
+									// Try to get battery info for this controller
+									batteryInfo := s.GetBatteryInfo(controllerID)
+									if batteryInfo != nil {
+										raid.Battery = batteryInfo
+									}
 									raidArrays = append(raidArrays, raid)
 								}
 							}
@@ -398,4 +581,62 @@ func (s *StoreCLITool) getRAIDDisksPlainText() []types.DiskInfo {
 	}
 
 	return disks
+}
+
+// enrichRAIDDiskWithSMART enriches RAID disk information with SMART data via StoreCLI
+func (s *StoreCLITool) enrichRAIDDiskWithSMART(disk *types.DiskInfo) {
+	if !s.IsAvailable() {
+		return
+	}
+
+	// Extract controller and slot info from device name (raid-enc64-slot3)
+	if !strings.HasPrefix(disk.Device, "raid-enc") {
+		return
+	}
+
+	// Parse enclosure and slot from device name
+	parts := strings.Split(disk.Device, "-")
+	if len(parts) < 3 {
+		return
+	}
+
+	enclosure := strings.TrimPrefix(parts[1], "enc")
+	slot := strings.TrimPrefix(parts[2], "slot")
+
+	// Try to get SMART data via StoreCLI
+	output, err := exec.Command(s.command, fmt.Sprintf("/c0/e%s/s%s", enclosure, slot), "show", "all").Output()
+	if err != nil {
+		// Try alternative command format
+		output, err = exec.Command(s.command, fmt.Sprintf("/c0/e%s/s%s", enclosure, slot), "show").Output()
+		if err != nil {
+			return
+		}
+	}
+
+	// Parse output for SMART data
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		if strings.Contains(line, "Drive Temperature") {
+			// Extract temperature value
+			re := regexp.MustCompile(`(\d+)C`)
+			matches := re.FindStringSubmatch(line)
+			if len(matches) > 1 {
+				if temp, err := strconv.Atoi(matches[1]); err == nil {
+					disk.Temperature = float64(temp)
+				}
+			}
+		} else if strings.Contains(line, "S.M.A.R.T alert") {
+			disk.SmartEnabled = !strings.Contains(strings.ToLower(line), "no")
+		} else if strings.Contains(line, "Drive health") || strings.Contains(line, "State") {
+			if strings.Contains(strings.ToLower(line), "online") || strings.Contains(strings.ToLower(line), "optimal") {
+				disk.SmartHealthy = true
+				disk.Health = "OK"
+			} else if strings.Contains(strings.ToLower(line), "failed") || strings.Contains(strings.ToLower(line), "critical") {
+				disk.SmartHealthy = false
+				disk.Health = "FAILED"
+			}
+		}
+	}
 }
