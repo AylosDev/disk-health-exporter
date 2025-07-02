@@ -1,17 +1,21 @@
 #!/bin/bash
+# VERSION 1.0
+# Author: EdgardoAcosta
 
 # Universal Installation script for Disk Health Exporter
-# Downloads latest release from GitHub and installs accordingly
 
 set -e
 
 # Default configuration
 GITHUB_REPO="AylosDev/disk-health-exporter"
-VERSION=""
+VERSION="latest"
 INSTALL_SERVICE=""
 BIN_DIR="/usr/local/bin"
 DOWNLOADED_BINARY=""
 SERVICE_PORT="9300"
+FORCE_INSTALL=""
+SKIP_VERSION_CHECK=""
+DRY_RUN=""
 
 # Colors for output
 RED='\033[0;31m'
@@ -30,6 +34,9 @@ show_usage() {
   echo "  -v, --version VERSION    Install specific version (default: latest)"
   echo "  -s, --service           Install as system service (systemd/launchd)"
   echo "  -p, --port PORT         Set service port (default: $SERVICE_PORT)"
+  echo "  -f, --force             Force installation/update without confirmation"
+  echo "  --skip-version-check    Skip version comparison check"
+  echo "  --dry-run              Show what would be done without executing"
   echo "  -h, --help              Show this help message"
   echo ""
   echo "Examples:"
@@ -38,6 +45,8 @@ show_usage() {
   echo "  $0 -s                  # Install latest with service"
   echo "  $0 -v v1.0.0 -s       # Install specific version with service"
   echo "  $0 -s -p 9200         # Install with service on port 9200"
+  echo "  $0 -f                  # Force install without confirmation"
+  echo "  $0 --dry-run           # See what would be installed"
 }
 
 # Parse command line arguments
@@ -56,6 +65,18 @@ parse_args() {
       SERVICE_PORT="$2"
       shift 2
       ;;
+    -f | --force)
+      FORCE_INSTALL="true"
+      shift
+      ;;
+    --skip-version-check)
+      SKIP_VERSION_CHECK="true"
+      shift
+      ;;
+    --dry-run)
+      DRY_RUN="true"
+      shift
+      ;;
     -h | --help)
       show_usage
       exit 0
@@ -68,8 +89,6 @@ parse_args() {
     esac
   done
 }
-
-echo -e "${GREEN}Installing Disk Health Prometheus Exporter${NC}"
 
 # Detect operating system and architecture
 detect_os() {
@@ -114,28 +133,6 @@ detect_os() {
   echo -e "${YELLOW}Detected: $DISTRO $VER ($OS-$ARCH)${NC}"
 }
 
-# Get latest release version from GitHub
-get_latest_version() {
-  echo -e "${YELLOW}Getting latest release version...${NC}"
-  local latest_url="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
-
-  if command -v curl >/dev/null 2>&1; then
-    VERSION=$(curl -s "$latest_url" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-  elif command -v wget >/dev/null 2>&1; then
-    VERSION=$(wget -qO- "$latest_url" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-  else
-    echo -e "${RED}Neither curl nor wget found. Please install one of them.${NC}"
-    exit 1
-  fi
-
-  if [[ -z "$VERSION" ]]; then
-    echo -e "${RED}Failed to get latest version${NC}"
-    exit 1
-  fi
-
-  echo -e "${GREEN}Latest version: $VERSION${NC}"
-}
-
 # Download binary from GitHub releases
 download_binary() {
   local binary_name=""
@@ -155,6 +152,13 @@ download_binary() {
 
   echo -e "${YELLOW}Downloading ${binary_name}...${NC}"
   echo -e "${BLUE}URL: $download_url${NC}"
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo "[DRY RUN] Would download from: $download_url"
+    echo "[DRY RUN] Would save to: $temp_file"
+    DOWNLOADED_BINARY="$temp_file"
+    return 0
+  fi
 
   # Check if curl or wget is available
   if command -v curl >/dev/null 2>&1; then
@@ -289,6 +293,12 @@ setup_linux_service() {
 
   echo -e "${YELLOW}Creating systemd service...${NC}"
 
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo "[DRY RUN] Would create systemd service file at /etc/systemd/system/disk-health-exporter.service"
+    echo "[DRY RUN] Would enable and configure service to run on port ${SERVICE_PORT}"
+    return 0
+  fi
+
   # Create systemd service file
   sudo tee /etc/systemd/system/disk-health-exporter.service >/dev/null <<EOF
 [Unit]
@@ -314,18 +324,9 @@ EOF
   sudo systemctl daemon-reload
   sudo systemctl enable disk-health-exporter.service
 
-  # Start the service
-  echo -e "${YELLOW}Starting the service...${NC}"
-  sudo systemctl start disk-health-exporter.service
-
-  # Check status
-  echo -e "${YELLOW}Checking service status...${NC}"
-  sudo systemctl status disk-health-exporter.service --no-pager
-
+  echo -e "${GREEN}Service configuration completed successfully!${NC}"
   echo ""
-  echo -e "${GREEN}Service installation completed successfully!${NC}"
-  echo ""
-  echo "The exporter is running on port ${SERVICE_PORT}"
+  echo "Service will be started after installation completes"
   echo "Metrics URL: http://localhost:${SERVICE_PORT}/metrics"
   echo ""
   echo "To check logs: sudo journalctl -u disk-health-exporter.service -f"
@@ -344,67 +345,298 @@ setup_macos_service() {
   PLIST_PATH="$HOME/Library/LaunchAgents/$PLIST_FILE"
 
   echo -e "${YELLOW}Creating LaunchAgent plist...${NC}"
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo "[DRY RUN] Would create LaunchAgent plist at $PLIST_PATH"
+    echo "[DRY RUN] Would configure service to run on port ${SERVICE_PORT}"
+    return 0
+  fi
+
+  # Ensure LaunchAgents directory exists
+  mkdir -p "$HOME/Library/LaunchAgents"
+
+  # Create the plist file with proper structure
   cat >"$PLIST_PATH" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>Label</key>
-    <string>com.diskhealth.exporter</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>${BIN_DIR}/disk-health-exporter</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>/tmp/disk-health-exporter.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/disk-health-exporter.error.log</string>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PORT</key>
-        <string>${SERVICE_PORT}</string>
-    </dict>
+	<key>Label</key>
+	<string>com.diskhealth.exporter</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>${BIN_DIR}/disk-health-exporter</string>
+		<string>--port</string>
+		<string>${SERVICE_PORT}</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>/tmp/disk-health-exporter.log</string>
+	<key>StandardErrorPath</key>
+	<string>/tmp/disk-health-exporter.err</string>
+	<key>WorkingDirectory</key>
+	<string>/tmp</string>
 </dict>
 </plist>
 EOF
 
-  # Load the LaunchAgent
-  echo -e "${YELLOW}Loading LaunchAgent...${NC}"
-  launchctl load "$PLIST_PATH"
+  # Set proper permissions on the plist file
+  chmod 644 "$PLIST_PATH"
 
-  # Wait a moment for the service to start
-  sleep 2
-
-  # Check if the service is running
-  echo -e "${YELLOW}Checking if service is running...${NC}"
-  if curl -s http://localhost:"${SERVICE_PORT}"/metrics >/dev/null; then
-    echo -e "${GREEN}Service is running successfully!${NC}"
-  else
-    echo -e "${YELLOW}Service might be starting up, checking logs...${NC}"
-    tail -5 /tmp/disk-health-exporter.log 2>/dev/null || echo "No logs yet"
+  # Validate the plist file
+  if ! plutil -lint "$PLIST_PATH" >/dev/null 2>&1; then
+    echo -e "${RED}Error: Invalid plist file created${NC}"
+    return 1
   fi
 
+  echo -e "${GREEN}LaunchAgent configuration completed successfully!${NC}"
   echo ""
-  echo -e "${GREEN}Service installation completed successfully!${NC}"
-  echo ""
-  echo "The exporter is running on port ${SERVICE_PORT}"
+  echo "Service will be started after installation completes"
   echo "Metrics URL: http://localhost:${SERVICE_PORT}/metrics"
   echo ""
-  echo "To check logs: tail -f /tmp/disk-health-exporter.log"
-  echo "To restart: launchctl unload $PLIST_PATH && launchctl load $PLIST_PATH"
-  echo "To stop: launchctl unload $PLIST_PATH"
+  echo "Log files:"
+  echo "  Output: /tmp/disk-health-exporter.log"
+  echo "  Errors: /tmp/disk-health-exporter.err"
   echo ""
-  echo "To test manually: ${BIN_DIR}/disk-health-exporter"
+  echo "Service management:"
+  echo "  Check logs: tail -f /tmp/disk-health-exporter.log"
+  echo "  Restart: launchctl bootout gui/\$(id -u) $PLIST_PATH && launchctl bootstrap gui/\$(id -u) $PLIST_PATH"
+  echo "  Stop: launchctl bootout gui/\$(id -u) $PLIST_PATH"
+  echo "  Status: launchctl list | grep com.diskhealth.exporter"
+  echo ""
+  echo "To test manually: ${BIN_DIR}/disk-health-exporter --port=${SERVICE_PORT}"
+}
+
+# Check if application already exists and compare versions
+check_existing_installation() {
+  if [[ "$SKIP_VERSION_CHECK" == "true" ]]; then
+    echo -e "${YELLOW}Skipping version check...${NC}"
+    return 0
+  fi
+
+  local binary_path="${BIN_DIR}/disk-health-exporter"
+
+  if [[ ! -f "$binary_path" ]]; then
+    echo -e "${YELLOW}No existing installation found${NC}"
+    return 0
+  fi
+
+  echo -e "${YELLOW}Found existing installation at $binary_path${NC}"
+
+  # Get current version
+  local current_version=""
+  if current_version=$("$binary_path" --version 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -n1); then
+    echo -e "${BLUE}Current version: $current_version${NC}"
+  else
+    echo -e "${YELLOW}Could not determine current version${NC}"
+    current_version="unknown"
+  fi
+
+  # If user specified a version, compare it
+  if [[ "$VERSION" != "latest" ]] && [[ "$current_version" == "$VERSION" ]]; then
+    echo -e "${GREEN}Version $VERSION is already installed${NC}"
+    if [[ "$FORCE_INSTALL" != "true" ]]; then
+      echo "Use --force to reinstall"
+      exit 0
+    fi
+  fi
+
+  # If installing latest, we'll proceed (could be newer version available)
+  if [[ "$VERSION" == "latest" ]] && [[ "$current_version" != "unknown" ]]; then
+    echo -e "${YELLOW}Will attempt to update from $current_version to latest${NC}"
+  fi
+
+  # Ask for confirmation unless force is used
+  if [[ "$FORCE_INSTALL" != "true" ]] && [[ "$DRY_RUN" != "true" ]]; then
+    echo ""
+    read -p "Do you want to proceed with the installation/update? (y/N): " -n 1 -r
+    echo ""
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+      echo "Installation cancelled"
+      exit 0
+    fi
+  fi
+}
+
+# Stop existing service if running
+stop_existing_service() {
+  echo -e "${YELLOW}Checking for running services...${NC}"
+
+  case "$OS" in
+  linux)
+    if systemctl is-active --quiet disk-health-exporter.service 2>/dev/null; then
+      echo -e "${YELLOW}Stopping systemd service...${NC}"
+      if [[ "$DRY_RUN" != "true" ]]; then
+        sudo systemctl stop disk-health-exporter.service
+      else
+        echo "[DRY RUN] Would stop systemd service"
+      fi
+    else
+      echo -e "${BLUE}No systemd service running${NC}"
+    fi
+    ;;
+  darwin)
+    local plist_path="$HOME/Library/LaunchAgents/com.diskhealth.exporter.plist"
+    # Check if service is loaded
+    if launchctl list | grep -q com.diskhealth.exporter 2>/dev/null; then
+      echo -e "${YELLOW}Stopping LaunchAgent...${NC}"
+      if [[ "$DRY_RUN" != "true" ]]; then
+        # Try modern bootout first, fallback to unload
+        launchctl bootout "gui/$(id -u)" "$plist_path" 2>/dev/null ||
+          launchctl unload "$plist_path" 2>/dev/null || true
+      else
+        echo "[DRY RUN] Would stop LaunchAgent"
+      fi
+    else
+      echo -e "${BLUE}No LaunchAgent running${NC}"
+    fi
+    ;;
+  esac
+}
+
+# Start/restart service after installation
+restart_service() {
+  if [[ "$INSTALL_SERVICE" != "true" ]]; then
+    return 0
+  fi
+
+  echo -e "${YELLOW}Starting service...${NC}"
+
+  case "$OS" in
+  linux)
+    if [[ "$DRY_RUN" != "true" ]]; then
+      sudo systemctl start disk-health-exporter.service
+    else
+      echo "[DRY RUN] Would start systemd service"
+    fi
+    ;;
+  darwin)
+    local plist_path="$HOME/Library/LaunchAgents/com.diskhealth.exporter.plist"
+    if [[ -f "$plist_path" ]]; then
+      if [[ "$DRY_RUN" != "true" ]]; then
+        # Try modern bootstrap first, fallback to load
+        if ! launchctl bootstrap "gui/$(id -u)" "$plist_path" 2>/dev/null; then
+          launchctl load "$plist_path" 2>/dev/null || echo "Failed to start service"
+        fi
+      else
+        echo "[DRY RUN] Would start LaunchAgent"
+      fi
+    fi
+    ;;
+  esac
+}
+
+# Test connection to the application
+test_connection() {
+  local max_attempts=30
+  local attempt=1
+  local url="http://localhost:${SERVICE_PORT}/metrics"
+
+  echo -e "${YELLOW}Testing connection to $url...${NC}"
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo "[DRY RUN] Would test connection to $url"
+    return 0
+  fi
+
+  # Wait for service to start
+  sleep 2
+
+  while [[ $attempt -le $max_attempts ]]; do
+    if command -v curl >/dev/null 2>&1; then
+      if curl -s --connect-timeout 2 "$url" >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ Service is responding on port ${SERVICE_PORT}${NC}"
+        echo -e "${BLUE}Metrics endpoint: $url${NC}"
+        return 0
+      fi
+    elif command -v wget >/dev/null 2>&1; then
+      if wget -q --timeout=2 --tries=1 -O /dev/null "$url" 2>/dev/null; then
+        echo -e "${GREEN}✓ Service is responding on port ${SERVICE_PORT}${NC}"
+        echo -e "${BLUE}Metrics endpoint: $url${NC}"
+        return 0
+      fi
+    else
+      echo -e "${YELLOW}Warning: Neither curl nor wget available for testing${NC}"
+      return 1
+    fi
+
+    echo -n "."
+    sleep 1
+    ((attempt++))
+  done
+
+  echo ""
+  echo -e "${RED}✗ Service is not responding after ${max_attempts} seconds${NC}"
+  echo "Check logs or try starting manually:"
+  case "$OS" in
+  linux)
+    echo "  sudo journalctl -u disk-health-exporter.service -f"
+    echo "  sudo systemctl status disk-health-exporter.service"
+    ;;
+  darwin)
+    echo "  tail -f /tmp/disk-health-exporter.log"
+    echo "  ${BIN_DIR}/disk-health-exporter --port=${SERVICE_PORT}"
+    ;;
+  esac
+  return 1
+}
+
+# Get latest version from releases page (without API)
+get_latest_version_from_releases() {
+  if [[ "$VERSION" != "latest" ]]; then
+    echo -e "${YELLOW}Using specified version: $VERSION${NC}"
+    return 0
+  fi
+
+  echo -e "${YELLOW}Getting latest release version from GitHub releases page...${NC}"
+  local releases_url="https://github.com/${GITHUB_REPO}/releases/latest"
+
+  if command -v curl >/dev/null 2>&1; then
+    # Follow redirects and extract version from final URL
+    VERSION=$(curl -s -L -I "$releases_url" | grep -i "location:" | tail -1 | sed -E 's/.*\/([^\/\r\n]+).*/\1/' | tr -d '\r\n')
+  elif command -v wget >/dev/null 2>&1; then
+    # Use wget to follow redirects and extract version
+    VERSION=$(wget -qO- --max-redirect=1 "$releases_url" 2>&1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+  else
+    echo -e "${RED}Neither curl nor wget found. Please install one of them.${NC}"
+    exit 1
+  fi
+
+  if [[ -z "$VERSION" ]] || [[ "$VERSION" == "latest" ]]; then
+    # Fallback: try to parse from releases page HTML
+    echo -e "${YELLOW}Fallback: parsing releases page...${NC}"
+    local releases_page_url="https://github.com/${GITHUB_REPO}/releases"
+
+    if command -v curl >/dev/null 2>&1; then
+      VERSION=$(curl -s "$releases_page_url" | grep -oE '/releases/tag/v[0-9]+\.[0-9]+\.[0-9]+' | head -1 | sed 's/.*tag\///')
+    elif command -v wget >/dev/null 2>&1; then
+      VERSION=$(wget -qO- "$releases_page_url" | grep -oE '/releases/tag/v[0-9]+\.[0-9]+\.[0-9]+' | head -1 | sed 's/.*tag\///')
+    fi
+  fi
+
+  if [[ -z "$VERSION" ]] || [[ "$VERSION" == "latest" ]]; then
+    echo -e "${RED}Failed to get latest version. Please specify version with -v flag${NC}"
+    echo -e "${YELLOW}Example: $0 -v v1.0.0${NC}"
+    exit 1
+  fi
+
+  echo -e "${GREEN}Latest version: $VERSION${NC}"
 }
 
 # Main installation logic
 main() {
   # Parse command line arguments
   parse_args "$@"
+
+  echo -e "${GREEN}Installing Disk Health Prometheus Exporter${NC}"
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo -e "${YELLOW}DRY RUN MODE - No actual changes will be made${NC}"
+    echo ""
+  fi
 
   # Check for required tools
   if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
@@ -415,36 +647,44 @@ main() {
   # Detect OS and architecture
   detect_os
 
-  # Get version to install
-  if [[ -z "$VERSION" ]]; then
-    get_latest_version
-  else
-    echo -e "${YELLOW}Installing version: $VERSION${NC}"
-  fi
+  # Check existing installation and compare versions
+  check_existing_installation
+
+  # Get version to install (without using GitHub API)
+  get_latest_version_from_releases
+
+  # Stop existing service if running
+  stop_existing_service
 
   # Download binary from GitHub releases
   download_binary
 
   # Install binary
   echo -e "${YELLOW}Installing binary to ${BIN_DIR}...${NC}"
-  sudo mkdir -p "$BIN_DIR"
-  sudo cp "$DOWNLOADED_BINARY" "${BIN_DIR}/disk-health-exporter"
 
-  case "$OS" in
-  linux)
-    sudo chown root:root "${BIN_DIR}/disk-health-exporter"
-    ;;
-  darwin)
-    sudo chown root:wheel "${BIN_DIR}/disk-health-exporter"
-    ;;
-  esac
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo "[DRY RUN] Would install binary to ${BIN_DIR}/disk-health-exporter"
+    echo "[DRY RUN] Would set appropriate permissions"
+  else
+    sudo mkdir -p "$BIN_DIR"
+    sudo cp "$DOWNLOADED_BINARY" "${BIN_DIR}/disk-health-exporter"
 
-  sudo chmod 755 "${BIN_DIR}/disk-health-exporter"
+    case "$OS" in
+    linux)
+      sudo chown root:root "${BIN_DIR}/disk-health-exporter"
+      ;;
+    darwin)
+      sudo chown root:wheel "${BIN_DIR}/disk-health-exporter"
+      ;;
+    esac
 
-  # Clean up downloaded file
-  rm -f "$DOWNLOADED_BINARY"
+    sudo chmod 755 "${BIN_DIR}/disk-health-exporter"
 
-  echo -e "${GREEN}Binary installed successfully!${NC}"
+    # Clean up downloaded file
+    rm -f "$DOWNLOADED_BINARY"
+
+    echo -e "${GREEN}Binary installed successfully!${NC}"
+  fi
 
   # Check dependencies and setup service if requested
   case "$OS" in
@@ -462,6 +702,14 @@ main() {
     ;;
   esac
 
+  # Start/restart service after installation
+  restart_service
+
+  # Test connection to the application
+  if [[ "$INSTALL_SERVICE" == "true" ]]; then
+    test_connection
+  fi
+
   # Show final installation summary
   echo ""
   echo -e "${GREEN}Installation completed successfully!${NC}"
@@ -470,15 +718,18 @@ main() {
   echo "Version: $VERSION"
 
   if [[ "$INSTALL_SERVICE" == "true" ]]; then
-    echo "Service: Installed and running"
+    echo "Service: Installed and configured"
     echo "Metrics URL: http://localhost:${SERVICE_PORT}/metrics"
   else
     echo "Service: Not installed (use -s flag to install service)"
-    echo "To run manually: ${BIN_DIR}/disk-health-exporter"
+    echo "To run manually: ${BIN_DIR}/disk-health-exporter --port=${SERVICE_PORT}"
   fi
 
-  echo ""
-  echo "To test: curl http://localhost:${SERVICE_PORT}/metrics"
+  if [[ "$DRY_RUN" != "true" ]] && [[ "$INSTALL_SERVICE" != "true" ]]; then
+    echo ""
+    echo "To test manually: ${BIN_DIR}/disk-health-exporter --port=${SERVICE_PORT} &"
+    echo "Then check: curl http://localhost:${SERVICE_PORT}/metrics"
+  fi
 }
 
 # Run main function

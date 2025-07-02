@@ -59,11 +59,11 @@ func setupHTTPHandlers(cfg *config.Config) {
 		<body>
 		<h1>Disk Health Prometheus Exporter</h1>
 		<p><a href="%s">Metrics</a></p>
-		<p>Version: 1.0.0</p>
+		<p>Version: %s (#%s)</p>
 		<p>Collect Interval: %s</p>
 		</body>
 		</html>
-		`, cfg.MetricsPath, cfg.CollectInterval)
+		`, cfg.MetricsPath, version, commit, cfg.CollectInterval)
 	})
 
 	// Health check endpoint
