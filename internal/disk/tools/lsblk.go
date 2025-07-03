@@ -42,6 +42,7 @@ func (l *LsblkTool) GetName() string {
 }
 
 // GetDisks returns disk information detected by lsblk
+// lsblk -d -o NAME,SIZE,MODEL,SERIAL,TRAN -n # list block devices with specified columns in plain format
 func (l *LsblkTool) GetDisks() []types.DiskInfo {
 	var disks []types.DiskInfo
 
@@ -95,6 +96,9 @@ func (l *LsblkTool) GetDisks() []types.DiskInfo {
 }
 
 // addFilesystemUsage adds filesystem usage information to a disk
+// lsblk -no MOUNTPOINTS,FSTYPE DEVICE # get mountpoints and filesystem types for device
+// lsblk -no NAME,MOUNTPOINTS,FSTYPE DEVICE # get detailed partition info (fallback)
+// df -B1 --output=used,avail MOUNTPOINT # get filesystem usage in bytes
 func (l *LsblkTool) addFilesystemUsage(disk *types.DiskInfo) {
 	// Get mountpoint and filesystem type using lsblk
 	cmd := exec.Command("lsblk", "-no", "MOUNTPOINTS,FSTYPE", disk.Device)

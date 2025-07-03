@@ -148,6 +148,7 @@ func (m *MdadmTool) GetSoftwareRAIDs() []types.SoftwareRAIDInfo {
 }
 
 // enrichSoftwareRAIDInfo adds detailed information using mdadm --detail
+// mdadm --detail DEVICE # get detailed information about RAID device
 func (m *MdadmTool) enrichSoftwareRAIDInfo(raid *types.SoftwareRAIDInfo) {
 	output, err := exec.Command("mdadm", "--detail", raid.Device).Output()
 	if err != nil {

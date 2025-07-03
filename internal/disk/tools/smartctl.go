@@ -42,6 +42,7 @@ func (s *SmartCtlTool) GetName() string {
 }
 
 // GetDisks returns disk information detected by smartctl
+// smartctl --scan # scan for all available devices
 func (s *SmartCtlTool) GetDisks() []types.DiskInfo {
 	var disks []types.DiskInfo
 
@@ -103,6 +104,8 @@ func (s *SmartCtlTool) GetSmartCtlInfoWithType(device, deviceType string) types.
 }
 
 // getSmartCtlInfoWithType gets SMART information for a device with specific type
+// smartctl -a -j DEVICE # get all SMART info in JSON format for device (auto type)
+// smartctl -d TYPE -a -j DEVICE # get all SMART info in JSON format for device with specific type
 func (s *SmartCtlTool) getSmartCtlInfoWithType(device, deviceType string) types.DiskInfo {
 	var diskInfo types.DiskInfo
 

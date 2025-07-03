@@ -86,6 +86,8 @@ func (a *ArcconfTool) GetRAIDDisks() []types.DiskInfo {
 }
 
 // GetBatteryInfo returns battery information for Arcconf controllers
+// arcconf getconfig X bbu # get battery backup unit information for controller X
+// arcconf getconfig X pd # get physical device info (fallback for battery info)
 func (a *ArcconfTool) GetBatteryInfo(controllerID string) *types.RAIDBatteryInfo {
 	if !a.IsAvailable() {
 		return nil
@@ -186,6 +188,7 @@ func (a *ArcconfTool) parseBatteryInfo(output, controllerID string) *types.RAIDB
 }
 
 // getControllers gets list of available Adaptec controllers
+// arcconf list # list all available controllers
 func (a *ArcconfTool) getControllers() []string {
 	var controllers []string
 
@@ -213,6 +216,7 @@ func (a *ArcconfTool) getControllers() []string {
 }
 
 // getArraysForController gets RAID arrays for a specific controller
+// arcconf getconfig X ld # get logical device information for controller X
 func (a *ArcconfTool) getArraysForController(controllerID string) []types.RAIDInfo {
 	var arrays []types.RAIDInfo
 
@@ -300,6 +304,7 @@ func (a *ArcconfTool) getArraysForController(controllerID string) []types.RAIDIn
 }
 
 // getDisksForController gets physical disks for a specific controller
+// arcconf getconfig X pd # get physical device information for controller X
 func (a *ArcconfTool) getDisksForController(controllerID string) []types.DiskInfo {
 	var disks []types.DiskInfo
 
@@ -392,6 +397,7 @@ func (a *ArcconfTool) getDisksForController(controllerID string) []types.DiskInf
 }
 
 // enrichRAIDDiskWithSMART enriches RAID disk information with SMART data via Arcconf
+// arcconf getconfig X pd C:D # get specific physical device info for channel C device D on controller X
 func (a *ArcconfTool) enrichRAIDDiskWithSMART(disk *types.DiskInfo, controllerID string) {
 	if !a.IsAvailable() {
 		return

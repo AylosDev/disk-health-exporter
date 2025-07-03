@@ -55,6 +55,7 @@ func (m *MegaCLITool) GetName() string {
 }
 
 // GetRAIDArrays returns RAID array information detected by MegaCLI
+// megacli -LDInfo -Lall -aALL -NoLog # get logical drive information for all arrays
 func (m *MegaCLITool) GetRAIDArrays() []types.RAIDInfo {
 	var raidArrays []types.RAIDInfo
 
@@ -214,6 +215,7 @@ func (m *MegaCLITool) GetRAIDDisks() []types.DiskInfo {
 }
 
 // getAllPhysicalDisksForArrays gets physical disks for all arrays in one optimized pass
+// megacli -LdPdInfo -aALL -NoLog # get logical drive and physical drive information for all arrays
 func (m *MegaCLITool) getAllPhysicalDisksForArrays(raidArrays []types.RAIDInfo) []types.DiskInfo {
 	var disks []types.DiskInfo
 	processedDisks := make(map[string]bool) // Track processed disks to avoid duplicates
@@ -291,6 +293,7 @@ func (m *MegaCLITool) finalizeLdPdInfoDisk(disk *types.DiskInfo, arrayID string,
 }
 
 // getUnassignedPhysicalDisks gets physical disks that are not assigned to any array (hot spares, unconfigured, etc.)
+// megacli -PDList -aALL -NoLog # list all physical disks from all adapters
 func (m *MegaCLITool) getUnassignedPhysicalDisks() []types.DiskInfo {
 	var disks []types.DiskInfo
 
@@ -524,6 +527,7 @@ func (m *MegaCLITool) extractModelFromInquiry(inquiry string) string {
 }
 
 // GetBatteryInfo returns battery information for a specific adapter
+// megacli -AdpBbuCmd -aX # get battery backup unit information for adapter X
 func (m *MegaCLITool) GetBatteryInfo(adapterID string) *types.RAIDBatteryInfo {
 	if !m.IsAvailable() {
 		return nil
@@ -749,6 +753,7 @@ func (m *MegaCLITool) GetUnconfiguredDisks() []types.DiskInfo {
 }
 
 // parseLdPdInfoOutputForAllArrays parses the output of MegaCli -LdPdInfo -aALL -NoLog for all target arrays
+// (This function processes output from: megacli -LdPdInfo -aALL -NoLog # get detailed logical and physical drive info)
 func (m *MegaCLITool) parseLdPdInfoOutputForAllArrays(output string, targetArrays map[string]bool) []types.DiskInfo {
 	var disks []types.DiskInfo
 	lines := strings.Split(output, "\n")

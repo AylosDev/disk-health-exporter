@@ -60,6 +60,7 @@ func (z *ZpoolTool) GetDisks() []types.DiskInfo {
 }
 
 // GetZFSPools returns ZFS pool information (similar to RAID arrays)
+// zpool list -H -o name,size,alloc,free,health # list all ZFS pools with specified columns
 func (z *ZpoolTool) GetZFSPools() []types.RAIDInfo {
 	var pools []types.RAIDInfo
 
@@ -102,6 +103,7 @@ func (z *ZpoolTool) GetZFSPools() []types.RAIDInfo {
 }
 
 // getPools gets list of ZFS pools
+// zpool list -H -o name # list pool names only
 func (z *ZpoolTool) getPools() []string {
 	var pools []string
 
@@ -122,6 +124,7 @@ func (z *ZpoolTool) getPools() []string {
 }
 
 // getDisksForPool gets physical disks for a specific ZFS pool
+// zpool status -v POOL # get detailed status including physical devices for pool
 func (z *ZpoolTool) getDisksForPool(poolName string) []types.DiskInfo {
 	var disks []types.DiskInfo
 
@@ -211,6 +214,7 @@ func (z *ZpoolTool) parseZFSDevice(line, poolName string) types.DiskInfo {
 }
 
 // enrichPoolInfo gets additional information about a ZFS pool
+// zpool status POOL # get detailed pool status and device information
 func (z *ZpoolTool) enrichPoolInfo(pool *types.RAIDInfo) {
 	// Get detailed pool information
 	output, err := exec.Command("zpool", "status", pool.ArrayID).Output()
@@ -245,6 +249,7 @@ func (z *ZpoolTool) enrichPoolInfo(pool *types.RAIDInfo) {
 }
 
 // enrichZFSDeviceInfo adds additional information to ZFS device
+// lsblk -d -o SIZE,MODEL DEVICE # get device size and model information
 func (z *ZpoolTool) enrichZFSDeviceInfo(disk *types.DiskInfo) {
 	if !strings.HasPrefix(disk.Device, "/dev/") {
 		return

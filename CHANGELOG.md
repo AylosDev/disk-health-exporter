@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.0.13] - 2025-07-03
+
+### Changed
+
+- **Enhanced CLI command documentation** - Added comprehensive inline documentation for all tool command executions
+  - **Function-level command documentation** - Added detailed comments above all functions that execute CLI commands showing the exact terminal commands used
+  - **Command purpose explanation** - Each CLI command includes a brief explanation of what it does (e.g., "list all physical disks from all adapters")
+  - **Real terminal format** - Commands are documented as they would be executed in terminal (e.g., `megacli -PDList -aALL -NoLog`)
+  - **Multiple command support** - Functions with multiple CLI calls or fallback commands document all command variants
+  - **Tool coverage** - Documentation added to all tools: MegaCLI, StoreCLI, Arcconf, smartctl, hdparm, lsblk, mdadm, nvme, zpool
+  - **Maintenance improvement** - Makes it easier for developers to understand what external commands each function executes
+  - **Debugging assistance** - Helps with troubleshooting by clearly showing which CLI tools and parameters are being used
+
 ## [0.0.12] - 2025-01-23
 
 ### Fixed

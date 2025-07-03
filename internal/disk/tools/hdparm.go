@@ -67,6 +67,7 @@ func (h *HdparmTool) GetDisks() []types.DiskInfo {
 }
 
 // getBlockDevices gets a list of block devices to check
+// lsblk -d -n -o NAME # list all block devices in short format
 func (h *HdparmTool) getBlockDevices() []string {
 	var devices []string
 
@@ -96,6 +97,7 @@ func (h *HdparmTool) getBlockDevices() []string {
 }
 
 // getDiskInfo gets disk information using hdparm -I
+// hdparm -I DEVICE # get detailed ATA information for device
 func (h *HdparmTool) getDiskInfo(device string) types.DiskInfo {
 	disk := types.DiskInfo{
 		Device: device,

@@ -41,6 +41,7 @@ func (n *NvmeTool) GetName() string {
 }
 
 // GetDisks returns NVMe disk information detected by nvme CLI
+// nvme list # list all NVMe devices
 func (n *NvmeTool) GetDisks() []types.DiskInfo {
 	var disks []types.DiskInfo
 

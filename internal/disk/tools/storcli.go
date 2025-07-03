@@ -59,6 +59,7 @@ func (s *StoreCLITool) GetName() string {
 }
 
 // GetRAIDArrays returns RAID array information detected by StoreCLI
+// storcli /call show J # get all controller info in JSON format
 func (s *StoreCLITool) GetRAIDArrays() []types.RAIDInfo {
 	var raidArrays []types.RAIDInfo
 
@@ -87,6 +88,8 @@ func (s *StoreCLITool) GetDisks() []types.DiskInfo {
 }
 
 // GetRAIDDisks returns disk information from RAID arrays with utilization calculations
+// storcli /call /eall /sall show all # get detailed physical disk information for all controllers and slots
+// storcli /call /eall /sall show J # get physical disk information in JSON format (fallback)
 func (s *StoreCLITool) GetRAIDDisks() []types.DiskInfo {
 	var disks []types.DiskInfo
 
@@ -137,6 +140,8 @@ func (s *StoreCLITool) GetRAIDDisks() []types.DiskInfo {
 }
 
 // GetBatteryInfo returns battery information for StoreCLI controllers
+// storcli /cX /bbu show all # get battery backup unit information for controller X
+// storcli /cX show bbu # get battery info (alternative format)
 func (s *StoreCLITool) GetBatteryInfo(controllerID string) *types.RAIDBatteryInfo {
 	if !s.IsAvailable() {
 		return nil
@@ -495,6 +500,7 @@ func (s *StoreCLITool) parsePhysicalDrive(driveMap map[string]interface{}, contr
 }
 
 // getRAIDArraysPlainText fallback method using plain text parsing
+// storcli /call show # get controller and array information in plain text format
 func (s *StoreCLITool) getRAIDArraysPlainText() []types.RAIDInfo {
 	var raidArrays []types.RAIDInfo
 
@@ -546,6 +552,7 @@ func (s *StoreCLITool) getRAIDArraysPlainText() []types.RAIDInfo {
 }
 
 // getRAIDDisksPlainText fallback method for physical disks using plain text parsing
+// storcli /call /eall /sall show # get physical disk information in plain text format
 func (s *StoreCLITool) getRAIDDisksPlainText() []types.DiskInfo {
 	var disks []types.DiskInfo
 
@@ -643,6 +650,8 @@ func (s *StoreCLITool) enrichRAIDDiskWithSMART(disk *types.DiskInfo) {
 
 	// Try to get SMART data via StoreCLI
 	cmd := fmt.Sprintf("/c%s/e%s/s%s", controller, enclosure, slot)
+	// storcli /cX/eY/sZ show all # get detailed drive information including SMART data
+	// storcli /cX/eY/sZ show # get basic drive information (fallback)
 	output, err := exec.Command(s.command, cmd, "show", "all").Output()
 	if err != nil {
 		// Try alternative command format
