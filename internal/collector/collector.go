@@ -123,13 +123,11 @@ func (c *Collector) collectLinuxMetrics() {
 			).Set(float64(raid.NumDrives))
 		}
 
-		if raid.NumActiveDrives > 0 {
-			c.metrics.RaidArrayNumActiveDrives.WithLabelValues(
-				raid.ArrayID,
-				raid.RaidLevel,
-				raid.Type,
-			).Set(float64(raid.NumActiveDrives))
-		}
+		c.metrics.RaidArrayNumActiveDrives.WithLabelValues(
+			raid.ArrayID,
+			raid.RaidLevel,
+			raid.Type,
+		).Set(float64(raid.NumActiveDrives))
 
 		if raid.NumSpareDrives > 0 {
 			c.metrics.RaidArrayNumSpareDrives.WithLabelValues(

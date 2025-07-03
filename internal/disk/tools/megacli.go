@@ -149,7 +149,50 @@ func (m *MegaCLITool) GetRAIDArrays() []types.RAIDInfo {
 		}
 	}
 
-	log.Printf("Found %d RAID arrays using MegaCLI", len(raidArrays))
+	spareDisks := m.getUnassignedPhysicalDisks()
+	numSpareDrives := 0
+	numFailedDrives := 0
+	numUnconfiguredDrives := 0
+
+	for _, disk := range spareDisks {
+		switch disk.RaidRole {
+		case "hot_spare", "spare":
+			numSpareDrives++
+		case "failed":
+			numFailedDrives++
+		case "unconfigured":
+			numUnconfiguredDrives++
+		}
+	}
+
+	for i := range raidArrays {
+		raidArrays[i].NumSpareDrives = numSpareDrives
+		raidArrays[i].NumFailedDrives += numFailedDrives // Add to existing count from array parsing
+
+		if raidArrays[i].NumActiveDrives == 0 && raidArrays[i].NumDrives > 0 {
+			raidArrays[i].NumActiveDrives = raidArrays[i].NumDrives
+		}
+	}
+
+	// If we have spare drives but no arrays, create a virtual array entry for the spares
+	// This ensures spare drives are always reported in metrics
+	if len(raidArrays) == 0 && numSpareDrives > 0 {
+		virtualArray := types.RAIDInfo{
+			ArrayID:         "spare",
+			RaidLevel:       "spare-only",
+			State:           "spare",
+			Status:          1, // OK status
+			Size:            0,
+			NumDrives:       numSpareDrives,
+			NumActiveDrives: 0,
+			NumSpareDrives:  numSpareDrives,
+			NumFailedDrives: numFailedDrives,
+			Type:            "hardware",
+			Controller:      "MegaCLI",
+		}
+		raidArrays = append(raidArrays, virtualArray)
+	}
+
 	return raidArrays
 }
 
