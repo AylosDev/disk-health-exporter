@@ -164,25 +164,100 @@ func (m *MegaCLITool) GetRAIDDisks() []types.DiskInfo {
 	// First get RAID array information to understand the configuration
 	raidArrays := m.GetRAIDArrays()
 
-	// Try to get detailed RAID to Physical Disk mapping first
-	output, err := exec.Command(m.command, "-LDPDInfo", "-aALL", "-NoLog").Output()
-	if err == nil {
-		// Parse the mapping and calculate utilization (detailed version)
-		detailedDisks := m.parseDetailedMegaCLIDisks(string(output), raidArrays)
-		if len(detailedDisks) > 0 {
-			log.Printf("Found %d RAID disks with utilization using MegaCLI", len(detailedDisks))
-			return detailedDisks
-		}
-	}
+	// Get detailed physical disk information with RAID array mapping
+	disks = m.getAllPhysicalDisksForArrays(raidArrays)
 
-	// Fallback to basic physical disk information
-	output, err = exec.Command(m.command, "-PDList", "-aALL", "-NoLog").Output()
+	return disks
+}
+
+// getAllPhysicalDisksForArrays gets physical disks for all arrays in one optimized pass
+func (m *MegaCLITool) getAllPhysicalDisksForArrays(raidArrays []types.RAIDInfo) []types.DiskInfo {
+	var disks []types.DiskInfo
+	processedDisks := make(map[string]bool) // Track processed disks to avoid duplicates
+
+	// Get the LdPdInfo output once for all arrays (more efficient)
+	ldPdOutput, err := exec.Command(m.command, "-LdPdInfo", "-aALL", "-NoLog").Output()
 	if err != nil {
-		log.Printf("Error executing MegaCLI for disk info: %v", err)
+		log.Printf("MegaCLI LdPdInfo command failed: %v", err)
 		return disks
 	}
 
-	// Parse physical disk information
+	// Create a map of target array IDs for quick lookup
+	targetArrays := make(map[string]bool)
+	for _, raidArray := range raidArrays {
+		targetArrays[raidArray.ArrayID] = true
+	}
+
+	// Parse the output once for all arrays
+	arrayDisks := m.parseLdPdInfoOutputForAllArrays(string(ldPdOutput), targetArrays)
+	for _, disk := range arrayDisks {
+		diskKey := fmt.Sprintf("%s-%s", disk.Location, disk.Device)
+		if !processedDisks[diskKey] {
+			disks = append(disks, disk)
+			processedDisks[diskKey] = true
+		}
+	}
+
+	// Also get unassigned physical disks (hot spares, unconfigured, etc.)
+	unassignedDisks := m.getUnassignedPhysicalDisks()
+	for _, disk := range unassignedDisks {
+		diskKey := fmt.Sprintf("%s-%s", disk.Location, disk.Device)
+		if !processedDisks[diskKey] {
+			disks = append(disks, disk)
+			processedDisks[diskKey] = true
+		}
+	}
+
+	return disks
+}
+
+// parseLdPdInfoOutput parses the output of MegaCli -LdPdInfo -aALL -NoLog
+
+// finalizeLdPdInfoDisk finalizes disk information from LdPdInfo parsing
+func (m *MegaCLITool) finalizeLdPdInfoDisk(disk *types.DiskInfo, arrayID string, enclosure string, slot string) {
+	// Set location if we have enclosure and slot
+	if enclosure != "" && slot != "" {
+		disk.Location = fmt.Sprintf("Enc:%s Slot:%s", enclosure, slot)
+	}
+
+	// Set RAID information
+	disk.RaidArrayID = arrayID
+	disk.Type = "raid"
+
+	// Determine role based on health status
+	if disk.Health != "" {
+		healthLower := strings.ToLower(disk.Health)
+		if strings.Contains(healthLower, "hotspare") || strings.Contains(healthLower, "spare") {
+			disk.RaidRole = "hot_spare"
+			disk.IsGlobalSpare = strings.Contains(healthLower, "global")
+		} else if strings.Contains(healthLower, "online") ||
+			strings.Contains(healthLower, "optimal") {
+			disk.RaidRole = "active"
+		} else if strings.Contains(healthLower, "rebuild") {
+			disk.RaidRole = "rebuilding"
+		} else if strings.Contains(healthLower, "failed") ||
+			strings.Contains(healthLower, "offline") {
+			disk.RaidRole = "failed"
+		} else {
+			disk.RaidRole = "unknown"
+		}
+	} else {
+		disk.RaidRole = "active" // Default assumption for disks in array
+	}
+
+}
+
+// getUnassignedPhysicalDisks gets physical disks that are not assigned to any array (hot spares, unconfigured, etc.)
+func (m *MegaCLITool) getUnassignedPhysicalDisks() []types.DiskInfo {
+	var disks []types.DiskInfo
+
+	// Get all physical disks
+	output, err := exec.Command(m.command, "-PDList", "-aALL", "-NoLog").Output()
+	if err != nil {
+		log.Printf("Error executing MegaCLI for unassigned disk info: %v", err)
+		return disks
+	}
+
 	lines := strings.Split(string(output), "\n")
 	var currentDisk types.DiskInfo
 	var enclosure, slot string
@@ -190,236 +265,122 @@ func (m *MegaCLITool) GetRAIDDisks() []types.DiskInfo {
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 
-		if strings.Contains(line, "Enclosure Device ID:") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				enclosure = strings.TrimSpace(parts[1])
-			}
-		} else if strings.Contains(line, "Slot Number:") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				slot = strings.TrimSpace(parts[1])
-			}
-			// Set location when we have both enclosure and slot
-			if enclosure != "" && slot != "" {
-				currentDisk.Location = fmt.Sprintf("Enc:%s Slot:%s", enclosure, slot)
-			}
-		} else if strings.Contains(line, "Device Id:") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				currentDisk.Device = strings.TrimSpace(parts[1])
-			}
-		} else if strings.Contains(line, "Inquiry Data:") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				inquiry := strings.TrimSpace(parts[1])
-				// Extract model from inquiry data - first field is typically the model
-				fields := strings.Fields(inquiry)
-				if len(fields) > 0 {
-					currentDisk.Model = fields[0]
-				}
-			}
-		} else if strings.Contains(line, "Firmware state:") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				state := strings.TrimSpace(parts[1])
-				currentDisk.Health = state
-				currentDisk.Type = "raid"
+		// Parse disk information line by line
+		m.parsePhysicalDiskLine(line, &currentDisk, &enclosure, &slot)
 
-				if currentDisk.Device != "" {
-					// Add basic utilization calculation
-					m.calculateBasicMegaCLIUtilization(&currentDisk, raidArrays)
-					disks = append(disks, currentDisk)
-					currentDisk = types.DiskInfo{} // Reset for next disk
-					enclosure = ""                 // Reset enclosure
-					slot = ""                      // Reset slot
-				}
+		// Check if this is the end of a disk section and if disk is unassigned
+		if strings.Contains(line, "Firmware state:") && currentDisk.Device != "" {
+			// Check if this disk is not part of an active array (hot spare, unconfigured, etc.)
+			state := strings.ToLower(currentDisk.Health)
+			if strings.Contains(state, "hotspare") || strings.Contains(state, "spare") ||
+				strings.Contains(state, "unconfigured") || strings.Contains(state, "jbod") ||
+				strings.Contains(state, "failed") {
+				m.finalizeUnassignedDisk(&currentDisk)
+				disks = append(disks, currentDisk)
 			}
+			currentDisk = types.DiskInfo{} // Reset for next disk
+			enclosure = ""
+			slot = ""
 		}
 	}
 
-	log.Printf("Found %d RAID disks using MegaCLI", len(disks))
 	return disks
 }
 
-// parseDetailedMegaCLIDisks parses detailed MegaCLI output
-func (m *MegaCLITool) parseDetailedMegaCLIDisks(output string, raidArrays []types.RAIDInfo) []types.DiskInfo {
-	var disks []types.DiskInfo
-	lines := strings.Split(output, "\n")
-	var currentArray *types.RAIDInfo
-	var currentDisk types.DiskInfo
-	var enclosure, slot string
+// parsePhysicalDiskLine parses a single line of physical disk information
+func (m *MegaCLITool) parsePhysicalDiskLine(line string, currentDisk *types.DiskInfo, enclosure *string, slot *string) {
+	if strings.Contains(line, "Enclosure Device ID:") {
+		parts := strings.Split(line, ":")
+		if len(parts) > 1 {
+			*enclosure = strings.TrimSpace(parts[1])
+		}
+	} else if strings.Contains(line, "Slot Number:") {
+		parts := strings.Split(line, ":")
+		if len(parts) > 1 {
+			*slot = strings.TrimSpace(parts[1])
+		}
+		// Set location when we have both enclosure and slot
+		if *enclosure != "" && *slot != "" {
+			currentDisk.Location = fmt.Sprintf("Enc:%s Slot:%s", *enclosure, *slot)
+		}
+	} else if strings.Contains(line, "Device Id:") {
+		parts := strings.Split(line, ":")
+		if len(parts) > 1 {
+			currentDisk.Device = strings.TrimSpace(parts[1])
+		}
+	} else if strings.Contains(line, "Coerced Size:") {
+		parts := strings.Split(line, ":")
+		if len(parts) > 1 {
+			sizeStr := strings.TrimSpace(parts[1])
+			// Remove any bracket information (e.g., "1.818 TB [0xE8E088B0 Sectors]" -> "1.818 TB")
+			if bracketIndex := strings.Index(sizeStr, "["); bracketIndex != -1 {
+				sizeStr = strings.TrimSpace(sizeStr[:bracketIndex])
+			}
+			currentDisk.Capacity = utils.ParseSizeToBytes(sizeStr)
+		}
+	} else if strings.Contains(line, "Inquiry Data:") {
+		parts := strings.Split(line, ":")
+		if len(parts) > 1 {
+			inquiry := strings.TrimSpace(parts[1])
 
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-
-		if strings.Contains(line, "Virtual Drive:") {
-			// Find the corresponding array from our earlier query
-			re := regexp.MustCompile(`Virtual Drive: (\d+)`)
-			matches := re.FindStringSubmatch(line)
+			// Extract model from inquiry data
+			currentDisk.Model = m.extractModelFromInquiry(inquiry)
+		}
+	} else if strings.Contains(line, "WWN:") {
+		parts := strings.Split(line, ":")
+		if len(parts) > 1 {
+			currentDisk.Serial = strings.TrimSpace(parts[1])
+		}
+	} else if strings.Contains(line, "Drive Temperature") {
+		parts := strings.Split(line, ":")
+		if len(parts) > 1 {
+			tempStr := strings.TrimSpace(parts[1])
+			re := regexp.MustCompile(`(\d+)C`)
+			matches := re.FindStringSubmatch(tempStr)
 			if len(matches) > 1 {
-				arrayID := matches[1]
-				for i, raid := range raidArrays {
-					if raid.ArrayID == arrayID {
-						currentArray = &raidArrays[i]
-						break
-					}
-				}
-			}
-		} else if strings.Contains(line, "PD:") && strings.Contains(line, "Information") {
-			// Start of a new physical disk in the current array
-			currentDisk = types.DiskInfo{}
-		} else if strings.Contains(line, "Enclosure Device ID:") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				enclosure = strings.TrimSpace(parts[1])
-			}
-		} else if strings.Contains(line, "Slot Number:") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				slot = strings.TrimSpace(parts[1])
-			}
-			if enclosure != "" && slot != "" {
-				currentDisk.Location = fmt.Sprintf("Enc:%s Slot:%s", enclosure, slot)
-			}
-		} else if strings.Contains(line, "Device Id:") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				currentDisk.Device = strings.TrimSpace(parts[1])
-			}
-		} else if strings.Contains(line, "Coerced Size:") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				sizeStr := strings.TrimSpace(parts[1])
-				currentDisk.Capacity = utils.ParseSizeToBytes(sizeStr)
-			}
-		} else if strings.Contains(line, "Inquiry Data:") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				inquiry := strings.TrimSpace(parts[1])
-				fields := strings.Fields(inquiry)
-				if len(fields) > 0 {
-					currentDisk.Model = fields[0]
-				}
-			}
-		} else if strings.Contains(line, "WWN:") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				currentDisk.Serial = strings.TrimSpace(parts[1])
-			}
-		} else if strings.Contains(line, "Drive's position:") {
-			// Extract RAID position information
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				position := strings.TrimSpace(parts[1])
-				currentDisk.RaidPosition = position
-
-				// Extract array ID from position (e.g., "DiskGroup: 0, Span: 0, Arm: 0")
-				if strings.Contains(position, "DiskGroup:") {
-					re := regexp.MustCompile(`DiskGroup:\s*(\d+)`)
-					matches := re.FindStringSubmatch(position)
-					if len(matches) > 1 {
-						currentDisk.RaidArrayID = matches[1]
-						currentDisk.RaidRole = "active"
-					}
-				}
-			}
-		} else if strings.Contains(line, "Commissioned Spare") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				spareStatus := strings.TrimSpace(parts[1])
-				currentDisk.IsCommissionedSpare = strings.ToLower(spareStatus) == "yes"
-				if currentDisk.IsCommissionedSpare {
-					currentDisk.RaidRole = "commissioned_spare"
-				}
-			}
-		} else if strings.Contains(line, "Emergency Spare") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				spareStatus := strings.TrimSpace(parts[1])
-				currentDisk.IsEmergencySpare = strings.ToLower(spareStatus) == "yes"
-				if currentDisk.IsEmergencySpare {
-					currentDisk.RaidRole = "emergency_spare"
-				}
-			}
-		} else if strings.Contains(line, "Drive Temperature") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				tempStr := strings.TrimSpace(parts[1])
-				re := regexp.MustCompile(`(\d+)C`)
-				matches := re.FindStringSubmatch(tempStr)
-				if len(matches) > 1 {
-					if temp, err := strconv.ParseFloat(matches[1], 64); err == nil {
-						currentDisk.Temperature = temp
-					}
-				}
-			}
-		} else if strings.Contains(line, "Firmware state:") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				state := strings.TrimSpace(parts[1])
-				currentDisk.Health = state
-				currentDisk.Type = "raid"
-
-				// Determine disk role based on firmware state
-				stateLower := strings.ToLower(state)
-				if strings.Contains(stateLower, "online") {
-					if currentDisk.RaidRole == "" {
-						currentDisk.RaidRole = "active"
-					}
-				} else if strings.Contains(stateLower, "hotspare") || strings.Contains(stateLower, "hot spare") {
-					currentDisk.RaidRole = "hot_spare"
-					currentDisk.IsGlobalSpare = true
-				} else if strings.Contains(stateLower, "spare") {
-					if currentDisk.RaidRole == "" {
-						currentDisk.RaidRole = "spare"
-					}
-				} else if strings.Contains(stateLower, "failed") {
-					currentDisk.RaidRole = "failed"
-				} else if strings.Contains(stateLower, "rebuild") {
-					currentDisk.RaidRole = "rebuilding"
-				} else if strings.Contains(stateLower, "unconfigured") {
-					currentDisk.RaidRole = "unconfigured"
-				}
-
-				// Calculate disk utilization if we have array information
-				if currentArray != nil && currentDisk.Device != "" {
-					m.calculateDiskUtilization(&currentDisk, currentArray)
-				}
-
-				if currentDisk.Device != "" {
-					disks = append(disks, currentDisk)
-					currentDisk = types.DiskInfo{}
-					enclosure = ""
-					slot = ""
+				if temp, err := strconv.ParseFloat(matches[1], 64); err == nil {
+					currentDisk.Temperature = temp
 				}
 			}
 		}
-	}
+	} else if strings.Contains(line, "Hotspare Information:") {
+		// This indicates the disk is a hot spare
+		currentDisk.RaidRole = "hot_spare"
+		currentDisk.IsGlobalSpare = true
+	} else if strings.Contains(line, "Type:") && currentDisk.RaidRole == "hot_spare" {
+		// Parse hotspare type information
+		parts := strings.Split(line, ":")
+		if len(parts) > 1 {
+			spareType := strings.TrimSpace(parts[1])
+			if strings.Contains(strings.ToLower(spareType), "global") {
+				currentDisk.IsGlobalSpare = true
+			}
+		}
+	} else if strings.Contains(line, "Firmware state:") {
+		parts := strings.Split(line, ":")
+		if len(parts) > 1 {
+			state := strings.TrimSpace(parts[1])
+			currentDisk.Health = state
+			currentDisk.Type = "raid"
 
-	return disks
+		}
+	}
 }
 
-// calculateBasicMegaCLIUtilization calculates basic utilization for disks without detailed role information
-func (m *MegaCLITool) calculateBasicMegaCLIUtilization(disk *types.DiskInfo, raidArrays []types.RAIDInfo) {
-	// Try to determine basic RAID role from health status
-	healthLower := strings.ToLower(disk.Health)
+// finalizeRAIDDisk finalizes a RAID disk with array-specific information
+func (m *MegaCLITool) finalizeRAIDDisk(disk *types.DiskInfo, raidArray types.RAIDInfo) {
+	disk.RaidArrayID = raidArray.ArrayID
+	disk.Type = "raid"
 
+	// Determine role based on health status
+	healthLower := strings.ToLower(disk.Health)
 	switch {
 	case strings.Contains(healthLower, "online"):
 		disk.RaidRole = "active"
-		// Try to find which array this disk belongs to (basic guess)
-		if len(raidArrays) > 0 {
-			disk.RaidArrayID = raidArrays[0].ArrayID // Default to first array
-			m.calculateDiskUtilization(disk, &raidArrays[0])
-		}
-	case strings.Contains(healthLower, "spare") || strings.Contains(healthLower, "hotspare"):
-		disk.RaidRole = "hot_spare"
-		disk.UsedBytes = 0
-		disk.AvailableBytes = disk.Capacity
-		disk.UsagePercentage = 0.0
-		disk.Mountpoint = "SPARE"
-		disk.Filesystem = "Hot-Spare"
+		m.calculateDiskUtilization(disk, &raidArray)
+	case strings.Contains(healthLower, "rebuilding"):
+		disk.RaidRole = "rebuilding"
+		m.calculateDiskUtilization(disk, &raidArray)
 	case strings.Contains(healthLower, "failed") || strings.Contains(healthLower, "fail"):
 		disk.RaidRole = "failed"
 		disk.UsedBytes = 0
@@ -427,6 +388,27 @@ func (m *MegaCLITool) calculateBasicMegaCLIUtilization(disk *types.DiskInfo, rai
 		disk.UsagePercentage = 0.0
 		disk.Mountpoint = "FAILED"
 		disk.Filesystem = "Failed-Drive"
+	default:
+		disk.RaidRole = "unknown"
+		m.calculateDiskUtilization(disk, &raidArray)
+	}
+}
+
+// finalizeUnassignedDisk finalizes an unassigned disk (hot spare, unconfigured, etc.)
+func (m *MegaCLITool) finalizeUnassignedDisk(disk *types.DiskInfo) {
+	disk.Type = "raid"
+
+	// Determine role based on health status
+	healthLower := strings.ToLower(disk.Health)
+	switch {
+	case strings.Contains(healthLower, "hotspare") || strings.Contains(healthLower, "spare"):
+		disk.RaidRole = "hot_spare"
+		disk.IsGlobalSpare = true
+		disk.UsedBytes = 0
+		disk.AvailableBytes = disk.Capacity
+		disk.UsagePercentage = 0.0
+		disk.Mountpoint = "SPARE"
+		disk.Filesystem = "Hot-Spare"
 	case strings.Contains(healthLower, "unconfigured"):
 		disk.RaidRole = "unconfigured"
 		disk.UsedBytes = 0
@@ -434,17 +416,68 @@ func (m *MegaCLITool) calculateBasicMegaCLIUtilization(disk *types.DiskInfo, rai
 		disk.UsagePercentage = 0.0
 		disk.Mountpoint = "UNCONFIGURED"
 		disk.Filesystem = "Unconfigured"
+	case strings.Contains(healthLower, "failed") || strings.Contains(healthLower, "fail"):
+		disk.RaidRole = "failed"
+		disk.UsedBytes = 0
+		disk.AvailableBytes = 0
+		disk.UsagePercentage = 0.0
+		disk.Mountpoint = "FAILED"
+		disk.Filesystem = "Failed-Drive"
+	case strings.Contains(healthLower, "jbod"):
+		disk.RaidRole = "unconfigured"
+		disk.UsedBytes = 0
+		disk.AvailableBytes = disk.Capacity
+		disk.UsagePercentage = 0.0
+		disk.Mountpoint = "JBOD"
+		disk.Filesystem = "JBOD"
 	default:
 		disk.RaidRole = "unknown"
-		// For unknown roles, assume basic utilization
-		if disk.Capacity > 0 {
-			disk.UsagePercentage = 50.0 // Conservative estimate
-			disk.UsedBytes = disk.Capacity / 2
-			disk.AvailableBytes = disk.Capacity / 2
-			disk.Mountpoint = "RAID-UNKNOWN"
-			disk.Filesystem = "Unknown-Array"
-		}
+		// Don't make estimations for unknown states - leave utilization values as zero
+		disk.UsagePercentage = 0.0
+		disk.UsedBytes = 0
+		disk.AvailableBytes = 0
+		disk.Mountpoint = "UNKNOWN"
+		disk.Filesystem = "Unknown"
 	}
+}
+
+// extractModelFromInquiry extracts the disk model from MegaCLI inquiry data in a vendor-agnostic way
+func (m *MegaCLITool) extractModelFromInquiry(inquiry string) string {
+	// Parse the first meaningful field that looks like a model number
+	fields := strings.Fields(inquiry)
+	if len(fields) == 0 {
+		return ""
+	}
+
+	// Strategy: Find the field that contains the actual model number
+	// Usually it's either the first field or the field that contains alphanumeric model pattern
+	var modelCandidate string
+
+	// Check if first field contains a dash (vendor-model format)
+	if strings.Contains(fields[0], "-") {
+		// Split by dash and take the second part (model part), but only until next dash
+		dashParts := strings.Split(fields[0], "-")
+		if len(dashParts) >= 2 {
+			// Take the second part, which is typically the model
+			modelCandidate = dashParts[1]
+		} else {
+			modelCandidate = fields[0]
+		}
+	} else if len(fields) >= 2 {
+		// If we have multiple fields, check if second field looks like a model
+		// Model numbers usually contain alphanumeric characters and are substantial
+		if len(fields[1]) >= 3 && (strings.ContainsAny(fields[1], "0123456789") || len(fields[1]) > 5) {
+			modelCandidate = fields[1]
+		} else {
+			modelCandidate = fields[0]
+		}
+	} else {
+		// Single field, use it as is
+		modelCandidate = fields[0]
+	}
+
+	// Clean up the model candidate (remove extra characters if needed)
+	return strings.TrimSpace(modelCandidate)
 }
 
 // GetBatteryInfo returns battery information for a specific adapter
@@ -540,6 +573,11 @@ func (m *MegaCLITool) calculateDiskUtilization(disk *types.DiskInfo, array *type
 		return
 	}
 
+	// Handle nil array (fallback case) - don't make estimations, leave values as zero
+	if array == nil {
+		return
+	}
+
 	// Handle spare drives differently - they are not actively used in arrays
 	if disk.RaidRole == "hot_spare" || disk.RaidRole == "spare" ||
 		disk.RaidRole == "commissioned_spare" || disk.RaidRole == "emergency_spare" ||
@@ -624,9 +662,7 @@ func (m *MegaCLITool) calculateDiskUtilization(disk *types.DiskInfo, array *type
 		utilizationPercentage = 50.0
 
 	default:
-		// Unknown RAID level, assume full utilization for active drives
-		usableCapacityPerDisk = disk.Capacity
-		utilizationPercentage = 100.0
+		return
 	}
 
 	// Set the calculated values for active drives
@@ -652,7 +688,6 @@ func (m *MegaCLITool) GetSpareDisks() []types.DiskInfo {
 		}
 	}
 
-	log.Printf("Found %d spare disks using MegaCLI", len(spareDisks))
 	return spareDisks
 }
 
@@ -667,6 +702,158 @@ func (m *MegaCLITool) GetUnconfiguredDisks() []types.DiskInfo {
 		}
 	}
 
-	log.Printf("Found %d unconfigured disks using MegaCLI", len(unconfiguredDisks))
 	return unconfiguredDisks
+}
+
+// parseLdPdInfoOutputForAllArrays parses the output of MegaCli -LdPdInfo -aALL -NoLog for all target arrays
+func (m *MegaCLITool) parseLdPdInfoOutputForAllArrays(output string, targetArrays map[string]bool) []types.DiskInfo {
+	var disks []types.DiskInfo
+	lines := strings.Split(output, "\n")
+	processedDisks := make(map[string]bool) // Track processed disks to avoid duplicates
+
+	var currentLogicalDrive string
+	var inTargetArray bool
+	var currentDisk types.DiskInfo
+	var enclosure, slot string
+	inPhysicalDiskSection := false
+
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// Detect logical drive sections
+		if strings.HasPrefix(line, "Virtual Drive:") || strings.Contains(line, "Virtual Drive") {
+			// Reset state for new logical drive
+			inTargetArray = false
+			inPhysicalDiskSection = false
+
+			// Extract logical drive number/ID
+			if strings.Contains(line, "Virtual Drive:") {
+				parts := strings.Split(line, ":")
+				if len(parts) > 1 {
+					driveInfo := strings.TrimSpace(parts[1])
+					// Extract just the number (e.g., "0 (Target Id: 0)" -> "0")
+					if idx := strings.Index(driveInfo, " "); idx != -1 {
+						currentLogicalDrive = driveInfo[:idx]
+					} else {
+						currentLogicalDrive = driveInfo
+					}
+
+					// Check if this is one of our target arrays
+					inTargetArray = targetArrays[currentLogicalDrive]
+				}
+			}
+			continue
+		}
+
+		// Skip lines if we're not in a target array
+		if !inTargetArray {
+			continue
+		}
+
+		// Detect physical disk sections within the target array
+		if strings.Contains(line, "PD:") && (strings.Contains(line, "Information") || strings.Contains(line, "Info")) {
+			inPhysicalDiskSection = true
+			// Reset disk info for new physical disk
+			currentDisk = types.DiskInfo{}
+			enclosure = ""
+			slot = ""
+			continue
+		}
+
+		if !inPhysicalDiskSection {
+			continue
+		}
+
+		// Parse disk information
+		if strings.Contains(line, "Enclosure Device ID:") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				enclosure = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "Slot Number:") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				slot = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "Device Id:") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				deviceID := strings.TrimSpace(parts[1])
+				currentDisk.Device = deviceID
+			}
+		} else if strings.Contains(line, "Inquiry Data:") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				inquiryData := strings.TrimSpace(parts[1])
+				currentDisk.Model = m.extractModelFromInquiry(inquiryData)
+			}
+		} else if strings.Contains(line, "Firmware state:") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				firmwareState := strings.TrimSpace(parts[1])
+				currentDisk.Health = firmwareState
+			}
+		} else if strings.Contains(line, "Coerced Size:") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				sizeStr := strings.TrimSpace(parts[1])
+				// Remove any bracket information (e.g., "1.818 TB [0xE8E088B0 Sectors]" -> "1.818 TB")
+				if bracketIndex := strings.Index(sizeStr, "["); bracketIndex != -1 {
+					sizeStr = strings.TrimSpace(sizeStr[:bracketIndex])
+				}
+				currentDisk.Capacity = utils.ParseSizeToBytes(sizeStr)
+			}
+		} else if strings.Contains(line, "WWN:") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				currentDisk.Serial = strings.TrimSpace(parts[1])
+			}
+		} else if strings.Contains(line, "Drive Temperature") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				tempStr := strings.TrimSpace(parts[1])
+				re := regexp.MustCompile(`(\d+)C`)
+				matches := re.FindStringSubmatch(tempStr)
+				if len(matches) > 1 {
+					if temp, err := strconv.ParseFloat(matches[1], 64); err == nil {
+						currentDisk.Temperature = temp
+					}
+				}
+			}
+		}
+
+		// Check if we've reached the end of a physical disk section
+		isEndOfDisk := false
+
+		// Look at the next non-empty line to see if it's a new PD section
+		if i+1 < len(lines) {
+			nextLine := strings.TrimSpace(lines[i+1])
+			if nextLine != "" && strings.Contains(nextLine, "PD:") && strings.Contains(nextLine, "Information") {
+				isEndOfDisk = true
+			}
+		} else if i == len(lines)-1 {
+			// End of file
+			isEndOfDisk = true
+		}
+
+		if isEndOfDisk && inPhysicalDiskSection {
+			// Finalize disk information
+			if enclosure != "" && slot != "" && currentDisk.Device != "" {
+				// Use the existing finalization method to properly set all disk properties
+				m.finalizeLdPdInfoDisk(&currentDisk, currentLogicalDrive, enclosure, slot)
+
+				// Only add if we haven't processed this disk yet
+				diskKey := fmt.Sprintf("%s-%s", currentDisk.Location, currentDisk.Device)
+				if !processedDisks[diskKey] {
+					disks = append(disks, currentDisk)
+					processedDisks[diskKey] = true
+
+				}
+			}
+
+			inPhysicalDiskSection = false
+		}
+	}
+
+	return disks
 }

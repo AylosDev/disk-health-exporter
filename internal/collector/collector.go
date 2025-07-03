@@ -197,8 +197,8 @@ func (c *Collector) collectFallbackMetrics() {
 // updateComprehensiveDiskMetrics updates comprehensive metrics for a list of disks
 func (c *Collector) updateComprehensiveDiskMetrics(disks []types.DiskInfo) {
 	for _, disk := range disks {
-		// Convert health status to numeric value
-		status := getHealthStatusValue(disk.Health)
+		// Convert health status to numeric value using the proper utility function
+		status := utils.GetHealthStatusValue(disk.Health)
 
 		// Basic health status metric with enhanced labels
 		c.metrics.DiskHealthStatus.WithLabelValues(
@@ -461,20 +461,6 @@ func (c *Collector) updateComprehensiveDiskMetrics(disks []types.DiskInfo) {
 			disk.Serial,
 			disk.Model,
 		).Set(boolToFloat(disk.IsGlobalSpare))
-	}
-}
-
-// getHealthStatusValue converts health string to numeric value
-func getHealthStatusValue(health string) int {
-	switch health {
-	case "OK":
-		return int(types.HealthStatusOK)
-	case "WARNING":
-		return int(types.HealthStatusWarning)
-	case "FAILED", "CRITICAL":
-		return int(types.HealthStatusCritical)
-	default:
-		return int(types.HealthStatusUnknown)
 	}
 }
 

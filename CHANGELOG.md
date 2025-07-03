@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.0.12] - 2025-01-23
+
+### Fixed
+
+- **Critical MegaCLI disk health parsing issue** - Fixed parsing of MegaCLI `ldpdinfo` output that was causing healthy disks to be reported as unhealthy (status 0) in Prometheus metrics
+  - **Robust disk section detection** - Enhanced parser to properly detect the end of each disk section and ensure all fields are parsed
+  - **Complete field extraction** - Fixed extraction of "Firmware state", "Inquiry Data", "Drive Temperature", "WWN", and "Coerced Size" for each disk
+  - **Proper health status mapping** - Ensured "Online, Spun Up" disks are correctly marked as healthy (status 1) in metrics
+  - **Finalization logic** - Fixed parser to call `finalizeLdPdInfoDisk` for each disk, which correctly sets RAID role and health status
+  - **Temperature and model parsing** - Restored ability to extract disk temperature and model information from MegaCLI output
+  - **Parser reliability** - Improved parser resilience to handle varying MegaCLI output formats and prevent premature section termination
+
 ## [0.0.11] - 2025-07-01
 
 ### Added

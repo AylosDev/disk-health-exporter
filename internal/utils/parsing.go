@@ -12,9 +12,10 @@ func GetHealthStatusValue(health string) int {
 	health = strings.ToUpper(strings.TrimSpace(health))
 
 	switch {
-	case strings.Contains(health, "OK") || strings.Contains(health, "ONLINE") || strings.Contains(health, "OPTIMAL"):
+	case strings.Contains(health, "OK") || strings.Contains(health, "ONLINE") || strings.Contains(health, "OPTIMAL") ||
+		strings.Contains(health, "SPUN UP") || strings.Contains(health, "HOTSPARE") || strings.Contains(health, "SPARE"):
 		return int(types.HealthStatusOK)
-	case strings.Contains(health, "WARNING") || strings.Contains(health, "REBUILDING"):
+	case strings.Contains(health, "WARNING") || strings.Contains(health, "REBUILDING") || strings.Contains(health, "SPUN DOWN"):
 		return int(types.HealthStatusWarning)
 	case strings.Contains(health, "CRITICAL") || strings.Contains(health, "FAILED") || strings.Contains(health, "OFFLINE"):
 		return int(types.HealthStatusCritical)
