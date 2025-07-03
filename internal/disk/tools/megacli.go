@@ -94,9 +94,7 @@ func (m *MegaCLITool) GetRAIDArrays() []types.RAIDInfo {
 			}
 		} else if strings.Contains(line, "RAID Level") {
 			// Extract RAID level - handle format like "Primary-5, Secondary-0, RAID Level Qualifier-3"
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				raidLevelStr := strings.TrimSpace(parts[1])
+			if raidLevelStr, ok := parseKeyValue(line, "RAID Level"); ok {
 				// Extract the primary RAID level (e.g., "Primary-5" -> "RAID 5")
 				if strings.Contains(raidLevelStr, "Primary-") {
 					re := regexp.MustCompile(`Primary-(\d+)`)
@@ -112,26 +110,20 @@ func (m *MegaCLITool) GetRAIDArrays() []types.RAIDInfo {
 			}
 		} else if strings.Contains(line, "Size") && strings.Contains(line, ":") && !strings.Contains(line, "Sector Size") && !strings.Contains(line, "Parity Size") && !strings.Contains(line, "Strip Size") {
 			// Extract array size - store as string for now since MegaCLI uses human-readable format (e.g., "113.795 TB")
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				sizeStr := strings.TrimSpace(parts[1])
+			if sizeStr, ok := parseKeyValue(line, "Size"); ok {
 				// Convert human-readable size to bytes if possible, otherwise store as 0
 				currentArray.Size = utils.ParseSizeToBytes(sizeStr)
 			}
 		} else if strings.Contains(line, "Number Of Drives") {
 			// Extract number of drives
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				numDrivesStr := strings.TrimSpace(parts[1])
+			if numDrivesStr, ok := parseKeyValue(line, "Number Of Drives"); ok {
 				if num, err := strconv.Atoi(numDrivesStr); err == nil && num > 0 {
 					currentArray.NumDrives = num
 				}
 			}
 		} else if strings.Contains(line, "State") {
 			// Extract state
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				state := strings.TrimSpace(parts[1])
+			if state, ok := parseKeyValue(line, "State"); ok {
 				currentArray.State = state
 				currentArray.Status = utils.GetRaidStatusValue(state)
 				currentArray.Type = "hardware"
@@ -236,7 +228,7 @@ func (m *MegaCLITool) getAllPhysicalDisksForArrays(raidArrays []types.RAIDInfo) 
 	// Parse the output once for all arrays
 	arrayDisks := m.parseLdPdInfoOutputForAllArrays(string(ldPdOutput), targetArrays)
 	for _, disk := range arrayDisks {
-		diskKey := fmt.Sprintf("%s-%s", disk.Location, disk.Device)
+		diskKey := generateDiskKey(disk)
 		if !processedDisks[diskKey] {
 			disks = append(disks, disk)
 			processedDisks[diskKey] = true
@@ -246,7 +238,7 @@ func (m *MegaCLITool) getAllPhysicalDisksForArrays(raidArrays []types.RAIDInfo) 
 	// Also get unassigned physical disks (hot spares, unconfigured, etc.)
 	unassignedDisks := m.getUnassignedPhysicalDisks()
 	for _, disk := range unassignedDisks {
-		diskKey := fmt.Sprintf("%s-%s", disk.Location, disk.Device)
+		diskKey := generateDiskKey(disk)
 		if !processedDisks[diskKey] {
 			disks = append(disks, disk)
 			processedDisks[diskKey] = true
@@ -270,26 +262,12 @@ func (m *MegaCLITool) finalizeLdPdInfoDisk(disk *types.DiskInfo, arrayID string,
 	disk.Type = "raid"
 
 	// Determine role based on health status
-	if disk.Health != "" {
-		healthLower := strings.ToLower(disk.Health)
-		if strings.Contains(healthLower, "hotspare") || strings.Contains(healthLower, "spare") {
-			disk.RaidRole = "hot_spare"
-			disk.IsGlobalSpare = strings.Contains(healthLower, "global")
-		} else if strings.Contains(healthLower, "online") ||
-			strings.Contains(healthLower, "optimal") {
-			disk.RaidRole = "active"
-		} else if strings.Contains(healthLower, "rebuild") {
-			disk.RaidRole = "rebuilding"
-		} else if strings.Contains(healthLower, "failed") ||
-			strings.Contains(healthLower, "offline") {
-			disk.RaidRole = "failed"
-		} else {
-			disk.RaidRole = "unknown"
-		}
-	} else {
-		disk.RaidRole = "active" // Default assumption for disks in array
-	}
+	disk.RaidRole = determineRaidRole(disk.Health)
 
+	// Set global spare flag for hot spares
+	if disk.RaidRole == "hot_spare" {
+		disk.IsGlobalSpare = strings.Contains(strings.ToLower(disk.Health), "global")
+	}
 }
 
 // getUnassignedPhysicalDisks gets physical disks that are not assigned to any array (hot spares, unconfigured, etc.)
@@ -335,59 +313,27 @@ func (m *MegaCLITool) getUnassignedPhysicalDisks() []types.DiskInfo {
 
 // parsePhysicalDiskLine parses a single line of physical disk information
 func (m *MegaCLITool) parsePhysicalDiskLine(line string, currentDisk *types.DiskInfo, enclosure *string, slot *string) {
-	if strings.Contains(line, "Enclosure Device ID:") {
-		parts := strings.Split(line, ":")
-		if len(parts) > 1 {
-			*enclosure = strings.TrimSpace(parts[1])
-		}
-	} else if strings.Contains(line, "Slot Number:") {
-		parts := strings.Split(line, ":")
-		if len(parts) > 1 {
-			*slot = strings.TrimSpace(parts[1])
-		}
+	if value, ok := parseKeyValue(line, "Enclosure Device ID"); ok {
+		*enclosure = value
+	} else if value, ok := parseKeyValue(line, "Slot Number"); ok {
+		*slot = value
 		// Set location when we have both enclosure and slot
 		if *enclosure != "" && *slot != "" {
 			currentDisk.Location = fmt.Sprintf("Enc:%s Slot:%s", *enclosure, *slot)
 		}
-	} else if strings.Contains(line, "Device Id:") {
-		parts := strings.Split(line, ":")
-		if len(parts) > 1 {
-			currentDisk.Device = strings.TrimSpace(parts[1])
-		}
-	} else if strings.Contains(line, "Coerced Size:") {
-		parts := strings.Split(line, ":")
-		if len(parts) > 1 {
-			sizeStr := strings.TrimSpace(parts[1])
-			// Remove any bracket information (e.g., "1.818 TB [0xE8E088B0 Sectors]" -> "1.818 TB")
-			if bracketIndex := strings.Index(sizeStr, "["); bracketIndex != -1 {
-				sizeStr = strings.TrimSpace(sizeStr[:bracketIndex])
-			}
-			currentDisk.Capacity = utils.ParseSizeToBytes(sizeStr)
-		}
-	} else if strings.Contains(line, "Inquiry Data:") {
-		parts := strings.Split(line, ":")
-		if len(parts) > 1 {
-			inquiry := strings.TrimSpace(parts[1])
-
-			// Extract model from inquiry data
-			currentDisk.Model = m.extractModelFromInquiry(inquiry)
-		}
-	} else if strings.Contains(line, "WWN:") {
-		parts := strings.Split(line, ":")
-		if len(parts) > 1 {
-			currentDisk.Serial = strings.TrimSpace(parts[1])
-		}
-	} else if strings.Contains(line, "Drive Temperature") {
-		parts := strings.Split(line, ":")
-		if len(parts) > 1 {
-			tempStr := strings.TrimSpace(parts[1])
-			re := regexp.MustCompile(`(\d+)C`)
-			matches := re.FindStringSubmatch(tempStr)
-			if len(matches) > 1 {
-				if temp, err := strconv.ParseFloat(matches[1], 64); err == nil {
-					currentDisk.Temperature = temp
-				}
-			}
+	} else if value, ok := parseKeyValue(line, "Device Id"); ok {
+		currentDisk.Device = value
+	} else if value, ok := parseKeyValue(line, "Coerced Size"); ok {
+		sizeStr := cleanSizeString(value)
+		currentDisk.Capacity = utils.ParseSizeToBytes(sizeStr)
+	} else if value, ok := parseKeyValue(line, "Inquiry Data"); ok {
+		// Extract model from inquiry data
+		currentDisk.Model = m.extractModelFromInquiry(value)
+	} else if value, ok := parseKeyValue(line, "WWN"); ok {
+		currentDisk.Serial = value
+	} else if value, ok := parseKeyValue(line, "Drive Temperature"); ok {
+		if temp, tempOk := parseTemperature(value); tempOk {
+			currentDisk.Temperature = temp
 		}
 	} else if strings.Contains(line, "Hotspare Information:") {
 		// This indicates the disk is a hot spare
@@ -395,21 +341,14 @@ func (m *MegaCLITool) parsePhysicalDiskLine(line string, currentDisk *types.Disk
 		currentDisk.IsGlobalSpare = true
 	} else if strings.Contains(line, "Type:") && currentDisk.RaidRole == "hot_spare" {
 		// Parse hotspare type information
-		parts := strings.Split(line, ":")
-		if len(parts) > 1 {
-			spareType := strings.TrimSpace(parts[1])
-			if strings.Contains(strings.ToLower(spareType), "global") {
+		if value, ok := parseKeyValue(line, "Type"); ok {
+			if strings.Contains(strings.ToLower(value), "global") {
 				currentDisk.IsGlobalSpare = true
 			}
 		}
-	} else if strings.Contains(line, "Firmware state:") {
-		parts := strings.Split(line, ":")
-		if len(parts) > 1 {
-			state := strings.TrimSpace(parts[1])
-			currentDisk.Health = state
-			currentDisk.Type = "raid"
-
-		}
+	} else if value, ok := parseKeyValue(line, "Firmware state"); ok {
+		currentDisk.Health = value
+		currentDisk.Type = "raid"
 	}
 }
 
@@ -445,45 +384,27 @@ func (m *MegaCLITool) finalizeUnassignedDisk(disk *types.DiskInfo) {
 	disk.Type = "raid"
 
 	// Determine role based on health status
-	healthLower := strings.ToLower(disk.Health)
-	switch {
-	case strings.Contains(healthLower, "hotspare") || strings.Contains(healthLower, "spare"):
-		disk.RaidRole = "hot_spare"
+	disk.RaidRole = determineRaidRole(disk.Health)
+
+	// Set utilization based on role
+	switch disk.RaidRole {
+	case "hot_spare":
 		disk.IsGlobalSpare = true
-		disk.UsedBytes = 0
-		disk.AvailableBytes = disk.Capacity
-		disk.UsagePercentage = 0.0
-		disk.Mountpoint = "SPARE"
-		disk.Filesystem = "Hot-Spare"
-	case strings.Contains(healthLower, "unconfigured"):
-		disk.RaidRole = "unconfigured"
-		disk.UsedBytes = 0
-		disk.AvailableBytes = disk.Capacity
-		disk.UsagePercentage = 0.0
-		disk.Mountpoint = "UNCONFIGURED"
-		disk.Filesystem = "Unconfigured"
-	case strings.Contains(healthLower, "failed") || strings.Contains(healthLower, "fail"):
-		disk.RaidRole = "failed"
-		disk.UsedBytes = 0
-		disk.AvailableBytes = 0
-		disk.UsagePercentage = 0.0
-		disk.Mountpoint = "FAILED"
-		disk.Filesystem = "Failed-Drive"
-	case strings.Contains(healthLower, "jbod"):
-		disk.RaidRole = "unconfigured"
-		disk.UsedBytes = 0
-		disk.AvailableBytes = disk.Capacity
-		disk.UsagePercentage = 0.0
-		disk.Mountpoint = "JBOD"
-		disk.Filesystem = "JBOD"
+		setDiskUtilization(disk, 0, disk.Capacity, 0.0, "SPARE", "Hot-Spare")
+	case "unconfigured":
+		setDiskUtilization(disk, 0, disk.Capacity, 0.0, "UNCONFIGURED", "Unconfigured")
+	case "failed":
+		setDiskUtilization(disk, 0, 0, 0.0, "FAILED", "Failed-Drive")
 	default:
-		disk.RaidRole = "unknown"
-		// Don't make estimations for unknown states - leave utilization values as zero
-		disk.UsagePercentage = 0.0
-		disk.UsedBytes = 0
-		disk.AvailableBytes = 0
-		disk.Mountpoint = "UNKNOWN"
-		disk.Filesystem = "Unknown"
+		// Handle JBOD case specifically
+		healthLower := strings.ToLower(disk.Health)
+		if strings.Contains(healthLower, "jbod") {
+			disk.RaidRole = "unconfigured"
+			setDiskUtilization(disk, 0, disk.Capacity, 0.0, "JBOD", "JBOD")
+		} else {
+			// Unknown state
+			setDiskUtilization(disk, 0, 0, 0.0, "UNKNOWN", "Unknown")
+		}
 	}
 }
 
@@ -554,55 +475,29 @@ func (m *MegaCLITool) GetBatteryInfo(adapterID string) *types.RAIDBatteryInfo {
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 
-		if strings.Contains(line, "BatteryType:") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				batteryInfo.BatteryType = strings.TrimSpace(parts[1])
-			}
+		if value, ok := parseKeyValue(line, "BatteryType"); ok {
+			batteryInfo.BatteryType = value
 		} else if strings.Contains(line, "Voltage:") && !strings.Contains(line, "Design Voltage") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				voltageStr := strings.TrimSpace(parts[1])
+			if voltageStr, ok := parseKeyValue(line, "Voltage"); ok {
 				// Extract voltage value (e.g., "9481 mV" -> 9481)
-				re := regexp.MustCompile(`(\d+)\s*mV`)
-				matches := re.FindStringSubmatch(voltageStr)
-				if len(matches) > 1 {
-					if voltage, err := strconv.Atoi(matches[1]); err == nil {
-						batteryInfo.Voltage = voltage
-					}
+				if voltage, voltageOk := extractNumericValue(voltageStr, "mV"); voltageOk {
+					batteryInfo.Voltage = voltage
 				}
 			}
-		} else if strings.Contains(line, "Current:") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				currentStr := strings.TrimSpace(parts[1])
-				// Extract current value (e.g., "0 mA" -> 0)
-				re := regexp.MustCompile(`(\d+)\s*mA`)
-				matches := re.FindStringSubmatch(currentStr)
-				if len(matches) > 1 {
-					if current, err := strconv.Atoi(matches[1]); err == nil {
-						batteryInfo.Current = current
-					}
-				}
+		} else if value, ok := parseKeyValue(line, "Current"); ok {
+			// Extract current value (e.g., "0 mA" -> 0)
+			if current, currentOk := extractNumericValue(value, "mA"); currentOk {
+				batteryInfo.Current = current
 			}
 		} else if strings.Contains(line, "Temperature:") && !strings.Contains(line, "Temperature                             :") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				tempStr := strings.TrimSpace(parts[1])
+			if tempStr, ok := parseKeyValue(line, "Temperature"); ok {
 				// Extract temperature value (e.g., "35 C" -> 35)
-				re := regexp.MustCompile(`(\d+)\s*C`)
-				matches := re.FindStringSubmatch(tempStr)
-				if len(matches) > 1 {
-					if temp, err := strconv.Atoi(matches[1]); err == nil {
-						batteryInfo.Temperature = temp
-					}
+				if temp, tempOk := extractNumericValue(tempStr, "C"); tempOk {
+					batteryInfo.Temperature = temp
 				}
 			}
-		} else if strings.Contains(line, "Battery State:") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				batteryInfo.State = strings.TrimSpace(parts[1])
-			}
+		} else if value, ok := parseKeyValue(line, "Battery State"); ok {
+			batteryInfo.State = value
 		}
 	}
 
@@ -776,9 +671,7 @@ func (m *MegaCLITool) parseLdPdInfoOutputForAllArrays(output string, targetArray
 
 			// Extract logical drive number/ID
 			if strings.Contains(line, "Virtual Drive:") {
-				parts := strings.Split(line, ":")
-				if len(parts) > 1 {
-					driveInfo := strings.TrimSpace(parts[1])
+				if driveInfo, ok := parseKeyValue(line, "Virtual Drive"); ok {
 					// Extract just the number (e.g., "0 (Target Id: 0)" -> "0")
 					if idx := strings.Index(driveInfo, " "); idx != -1 {
 						currentLogicalDrive = driveInfo[:idx]
@@ -813,60 +706,24 @@ func (m *MegaCLITool) parseLdPdInfoOutputForAllArrays(output string, targetArray
 		}
 
 		// Parse disk information
-		if strings.Contains(line, "Enclosure Device ID:") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				enclosure = strings.TrimSpace(parts[1])
-			}
-		} else if strings.Contains(line, "Slot Number:") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				slot = strings.TrimSpace(parts[1])
-			}
-		} else if strings.Contains(line, "Device Id:") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				deviceID := strings.TrimSpace(parts[1])
-				currentDisk.Device = deviceID
-			}
-		} else if strings.Contains(line, "Inquiry Data:") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				inquiryData := strings.TrimSpace(parts[1])
-				currentDisk.Model = m.extractModelFromInquiry(inquiryData)
-			}
-		} else if strings.Contains(line, "Firmware state:") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				firmwareState := strings.TrimSpace(parts[1])
-				currentDisk.Health = firmwareState
-			}
-		} else if strings.Contains(line, "Coerced Size:") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				sizeStr := strings.TrimSpace(parts[1])
-				// Remove any bracket information (e.g., "1.818 TB [0xE8E088B0 Sectors]" -> "1.818 TB")
-				if bracketIndex := strings.Index(sizeStr, "["); bracketIndex != -1 {
-					sizeStr = strings.TrimSpace(sizeStr[:bracketIndex])
-				}
-				currentDisk.Capacity = utils.ParseSizeToBytes(sizeStr)
-			}
-		} else if strings.Contains(line, "WWN:") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				currentDisk.Serial = strings.TrimSpace(parts[1])
-			}
-		} else if strings.Contains(line, "Drive Temperature") {
-			parts := strings.Split(line, ":")
-			if len(parts) > 1 {
-				tempStr := strings.TrimSpace(parts[1])
-				re := regexp.MustCompile(`(\d+)C`)
-				matches := re.FindStringSubmatch(tempStr)
-				if len(matches) > 1 {
-					if temp, err := strconv.ParseFloat(matches[1], 64); err == nil {
-						currentDisk.Temperature = temp
-					}
-				}
+		if value, ok := parseKeyValue(line, "Enclosure Device ID"); ok {
+			enclosure = value
+		} else if value, ok := parseKeyValue(line, "Slot Number"); ok {
+			slot = value
+		} else if value, ok := parseKeyValue(line, "Device Id"); ok {
+			currentDisk.Device = value
+		} else if value, ok := parseKeyValue(line, "Inquiry Data"); ok {
+			currentDisk.Model = m.extractModelFromInquiry(value)
+		} else if value, ok := parseKeyValue(line, "Firmware state"); ok {
+			currentDisk.Health = value
+		} else if value, ok := parseKeyValue(line, "Coerced Size"); ok {
+			sizeStr := cleanSizeString(value)
+			currentDisk.Capacity = utils.ParseSizeToBytes(sizeStr)
+		} else if value, ok := parseKeyValue(line, "WWN"); ok {
+			currentDisk.Serial = value
+		} else if value, ok := parseKeyValue(line, "Drive Temperature"); ok {
+			if temp, tempOk := parseTemperature(value); tempOk {
+				currentDisk.Temperature = temp
 			}
 		}
 
@@ -891,11 +748,10 @@ func (m *MegaCLITool) parseLdPdInfoOutputForAllArrays(output string, targetArray
 				m.finalizeLdPdInfoDisk(&currentDisk, currentLogicalDrive, enclosure, slot)
 
 				// Only add if we haven't processed this disk yet
-				diskKey := fmt.Sprintf("%s-%s", currentDisk.Location, currentDisk.Device)
+				diskKey := generateDiskKey(currentDisk)
 				if !processedDisks[diskKey] {
 					disks = append(disks, currentDisk)
 					processedDisks[diskKey] = true
-
 				}
 			}
 
@@ -904,4 +760,85 @@ func (m *MegaCLITool) parseLdPdInfoOutputForAllArrays(output string, targetArray
 	}
 
 	return disks
+}
+
+// Utility functions to reduce code duplication
+
+// parseKeyValue extracts value from "key: value" formatted lines using regex
+func parseKeyValue(line, key string) (string, bool) {
+	// Use regex to match "key" followed by optional spaces, colon, and capture the value
+	pattern := fmt.Sprintf(`%s\s*:\s*(.+)`, regexp.QuoteMeta(key))
+	re := regexp.MustCompile(pattern)
+	matches := re.FindStringSubmatch(line)
+	if len(matches) > 1 {
+		return strings.TrimSpace(matches[1]), true
+	}
+	return "", false
+}
+
+// determineRaidRole determines RAID role based on health status
+func determineRaidRole(health string) string {
+
+	healthLower := strings.ToLower(health)
+	switch {
+	case strings.Contains(healthLower, "hotspare") || strings.Contains(healthLower, "spare"):
+		return "hot_spare"
+	case strings.Contains(healthLower, "online") || strings.Contains(healthLower, "optimal"):
+		return "active"
+	case strings.Contains(healthLower, "rebuild"):
+		return "rebuilding"
+	case strings.Contains(healthLower, "failed") || strings.Contains(healthLower, "offline"):
+		return "failed"
+	case strings.Contains(healthLower, "unconfigured"):
+		return "unconfigured"
+	default:
+		return "unknown"
+	}
+}
+
+// setDiskUtilization sets disk utilization values
+func setDiskUtilization(disk *types.DiskInfo, usedBytes, availableBytes int64, usagePercentage float64, mountpoint, filesystem string) {
+	disk.UsedBytes = usedBytes
+	disk.AvailableBytes = availableBytes
+	disk.UsagePercentage = usagePercentage
+	disk.Mountpoint = mountpoint
+	disk.Filesystem = filesystem
+}
+
+// parseTemperature extracts temperature value from strings like "35 C" or "35C"
+func parseTemperature(tempStr string) (float64, bool) {
+	re := regexp.MustCompile(`(\d+)C`)
+	matches := re.FindStringSubmatch(tempStr)
+	if len(matches) > 1 {
+		if temp, err := strconv.ParseFloat(matches[1], 64); err == nil {
+			return temp, true
+		}
+	}
+	return 0, false
+}
+
+// extractNumericValue extracts numeric values with units (e.g., "9481 mV" -> 9481)
+func extractNumericValue(text, unit string) (int, bool) {
+	pattern := fmt.Sprintf(`(\d+)\s*%s`, unit)
+	re := regexp.MustCompile(pattern)
+	matches := re.FindStringSubmatch(text)
+	if len(matches) > 1 {
+		if value, err := strconv.Atoi(matches[1]); err == nil {
+			return value, true
+		}
+	}
+	return 0, false
+}
+
+// generateDiskKey creates a unique disk identifier
+func generateDiskKey(disk types.DiskInfo) string {
+	return fmt.Sprintf("%s-%s", disk.Location, disk.Device)
+}
+
+// cleanSizeString removes bracket information from size strings
+func cleanSizeString(sizeStr string) string {
+	if bracketIndex := strings.Index(sizeStr, "["); bracketIndex != -1 {
+		return strings.TrimSpace(sizeStr[:bracketIndex])
+	}
+	return sizeStr
 }
