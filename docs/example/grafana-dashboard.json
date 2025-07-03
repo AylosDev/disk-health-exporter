@@ -20,7 +20,6 @@
   "graphTooltip": 0,
   "id": null,
   "links": [],
-  "liveNow": false,
   "panels": [
     {
       "collapsed": false,
@@ -42,54 +41,75 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
           },
           "mappings": [
             {
               "options": {
                 "0": {
-                  "color": "gray",
+                  "color": "red",
                   "index": 0,
-                  "text": "Unknown"
+                  "text": "Fail"
                 },
                 "1": {
                   "color": "green",
                   "index": 1,
-                  "text": "Healthy"
-                },
-                "2": {
-                  "color": "yellow",
-                  "index": 2,
-                  "text": "Warning"
-                },
-                "3": {
-                  "color": "red",
-                  "index": 3,
-                  "text": "Critical"
+                  "text": "OK"
                 }
               },
               "type": "value"
             }
           ],
           "thresholds": {
+            "mode": "absolute",
             "steps": [
               {
+                "color": "red"
+              },
+              {
                 "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 2
-              },
-              {
-                "color": "red",
-                "value": 3
+                "value": 1
               }
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Status"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "device"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Disk Name"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -99,32 +119,41 @@
       },
       "id": 2,
       "options": {
-        "orientation": "auto",
-        "reduceOptions": {
-          "values": false,
-          "calcs": [
-            "lastNotNull"
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
           ],
-          "fields": ""
+          "show": false
         },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "Disk Name"
+          }
+        ]
       },
-      "pluginVersion": "10.0.0",
+      "pluginVersion": "12.0.2",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "disk_health_status{job=~\"$job\"}",
-          "format": "time_series",
-          "legendFormat": "{{device}} ({{model}})",
+          "editorMode": "code",
+          "expr": "disk_health_status{job=~\"$job\", instance=\"$instance\"}",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "__auto",
+          "range": false,
           "refId": "A"
         }
       ],
       "title": "Disk Health Status",
-      "type": "gauge"
+      "type": "table"
     },
     {
       "datasource": {
@@ -140,7 +169,8 @@
             "hideFrom": {
               "legend": false,
               "tooltip": false,
-              "vis": false
+              "vis": false,
+              "viz": false
             }
           },
           "mappings": []
@@ -162,26 +192,30 @@
         },
         "pieType": "pie",
         "reduceOptions": {
-          "values": false,
           "calcs": [
             "lastNotNull"
           ],
-          "fields": ""
+          "fields": "",
+          "values": false
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.0.2",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "count by (value) (label_replace(disk_health_status{job=~\"$job\"}, \"status\", \"Unknown\", \"value\", \"0\") or label_replace(disk_health_status{job=~\"$job\"}, \"status\", \"Healthy\", \"value\", \"1\") or label_replace(disk_health_status{job=~\"$job\"}, \"status\", \"Warning\", \"value\", \"2\") or label_replace(disk_health_status{job=~\"$job\"}, \"status\", \"Critical\", \"value\", \"3\"))",
+          "editorMode": "code",
+          "expr": "count by (status) (label_replace(disk_health_status{job=~\"$job\", instance=\"$instance\"} == 0, \"status\", \"Fail\", \"__name__\", \".*\") or label_replace(disk_health_status{job=~\"$job\", instance=\"$instance\"} == 1, \"status\", \"OK\", \"__name__\", \".*\"))",
           "format": "time_series",
           "legendFormat": "{{status}}",
+          "range": true,
           "refId": "A"
         }
       ],
@@ -212,19 +246,23 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
-              "vis": false
+              "vis": false,
+              "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -243,10 +281,10 @@
           },
           "mappings": [],
           "thresholds": {
+            "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "yellow",
@@ -277,19 +315,23 @@
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.0.2",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "disk_temperature_celsius{job=~\"$job\"}",
+          "editorMode": "code",
+          "expr": "disk_temperature_celsius{job=~\"$job\", instance=\"$instance\"}",
           "format": "time_series",
           "legendFormat": "{{device}} ({{model}})",
+          "range": true,
           "refId": "A"
         }
       ],
@@ -347,10 +389,10 @@
             }
           ],
           "thresholds": {
+            "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "yellow",
@@ -373,27 +415,32 @@
       },
       "id": 7,
       "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
         "orientation": "auto",
         "reduceOptions": {
-          "values": false,
           "calcs": [
             "lastNotNull"
           ],
-          "fields": ""
+          "fields": "",
+          "values": false
         },
         "showThresholdLabels": false,
-        "showThresholdMarkers": true
+        "showThresholdMarkers": true,
+        "sizing": "auto"
       },
-      "pluginVersion": "10.0.0",
+      "pluginVersion": "12.0.2",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "raid_array_status{job=~\"$job\"}",
+          "editorMode": "code",
+          "expr": "raid_array_status{job=~\"$job\", instance=\"$instance\"}",
           "format": "time_series",
           "legendFormat": "Array {{array_id}} ({{raid_level}})",
+          "range": true,
           "refId": "A"
         }
       ],
@@ -411,19 +458,23 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
-              "vis": false
+              "vis": false,
+              "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -444,10 +495,10 @@
           "max": 100,
           "min": 0,
           "thresholds": {
+            "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -474,19 +525,23 @@
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.0.2",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "raid_array_rebuild_progress_percentage{job=~\"$job\"}",
+          "editorMode": "code",
+          "expr": "raid_array_rebuild_progress_percentage{job=~\"$job\", instance=\"$instance\"}",
           "format": "time_series",
           "legendFormat": "Rebuild {{array_id}}",
+          "range": true,
           "refId": "A"
         },
         {
@@ -494,9 +549,11 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "raid_array_scrub_progress_percentage{job=~\"$job\"}",
+          "editorMode": "code",
+          "expr": "raid_array_scrub_progress_percentage{job=~\"$job\", instance=\"$instance\"}",
           "format": "time_series",
           "legendFormat": "Scrub {{array_id}}",
+          "range": true,
           "refId": "B"
         }
       ],
@@ -514,19 +571,23 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
-              "vis": false
+              "vis": false,
+              "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -545,17 +606,18 @@
           },
           "mappings": [],
           "thresholds": {
+            "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
                 "value": 80
               }
             ]
-          }
+          },
+          "unit": "percent"
         },
         "overrides": []
       },
@@ -574,19 +636,23 @@
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.0.2",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "raid_array_drives_total{job=~\"$job\"}",
+          "editorMode": "code",
+          "expr": "raid_array_drives_total{job=~\"$job\", instance=\"$instance\"}",
           "format": "time_series",
           "legendFormat": "Total {{array_id}}",
+          "range": true,
           "refId": "A"
         },
         {
@@ -594,9 +660,11 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "raid_array_active_drives{job=~\"$job\"}",
+          "editorMode": "code",
+          "expr": "raid_array_active_drives{job=~\"$job\", instance=\"$instance\"}",
           "format": "time_series",
           "legendFormat": "Active {{array_id}}",
+          "range": true,
           "refId": "B"
         },
         {
@@ -604,27 +672,16 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "raid_array_failed_drives{job=~\"$job\"}",
+          "editorMode": "code",
+          "expr": "raid_array_failed_drives{job=~\"$job\", instance=\"$instance\"}",
           "format": "time_series",
           "legendFormat": "Failed {{array_id}}",
+          "range": true,
           "refId": "C"
         }
       ],
       "title": "RAID Array Drives",
       "type": "timeseries"
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 27
-      },
-      "id": 10,
-      "panels": [],
-      "title": "Disk Errors & Health Metrics",
-      "type": "row"
     },
     {
       "datasource": {
@@ -637,19 +694,23 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
-              "vis": false
+              "vis": false,
+              "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -668,13 +729,13 @@
           },
           "mappings": [],
           "thresholds": {
+            "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
-                "color": "red",
+                "color": "yellow",
                 "value": 1
               }
             ]
@@ -684,11 +745,11 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 24,
         "x": 0,
-        "y": 28
+        "y": 27
       },
-      "id": 11,
+      "id": 27,
       "options": {
         "legend": {
           "calcs": [],
@@ -697,150 +758,27 @@
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.0.2",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "disk_reallocated_sectors_total{job=~\"$job\"}",
+          "editorMode": "code",
+          "expr": "raid_array_spare_drives{job=~\"$job\", instance=\"$instance\"}",
           "format": "time_series",
-          "legendFormat": "Reallocated {{device}}",
+          "legendFormat": "Spare {{array_id}}",
+          "range": true,
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "disk_pending_sectors_total{job=~\"$job\"}",
-          "format": "time_series",
-          "legendFormat": "Pending {{device}}",
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "disk_uncorrectable_errors_total{job=~\"$job\"}",
-          "format": "time_series",
-          "legendFormat": "Uncorrectable {{device}}",
-          "refId": "C"
         }
       ],
-      "title": "Disk Sector Errors",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "vis": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "max": 100,
-          "min": 0,
-          "thresholds": {
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 80
-              },
-              {
-                "color": "red",
-                "value": 90
-              }
-            ]
-          },
-          "unit": "percent"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 28
-      },
-      "id": 12,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "disk_wear_leveling_percentage{job=~\"$job\"}",
-          "format": "time_series",
-          "legendFormat": "Wear Level {{device}}",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "disk_percentage_used{job=~\"$job\"}",
-          "format": "time_series",
-          "legendFormat": "Used {{device}}",
-          "refId": "B"
-        }
-      ],
-      "title": "SSD/NVMe Wear",
+      "title": "RAID Spare Drives",
       "type": "timeseries"
     },
     {
@@ -867,19 +805,23 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
-              "vis": false
+              "vis": false,
+              "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -898,10 +840,10 @@
           },
           "mappings": [],
           "thresholds": {
+            "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -928,19 +870,23 @@
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.0.2",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "disk_power_on_hours_total{job=~\"$job\"}",
+          "editorMode": "code",
+          "expr": "disk_power_on_hours_total{job=~\"$job\", instance=\"$instance\"}",
           "format": "time_series",
           "legendFormat": "{{device}} ({{model}})",
+          "range": true,
           "refId": "A"
         }
       ],
@@ -958,19 +904,23 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
-              "vis": false
+              "vis": false,
+              "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -989,132 +939,32 @@
           },
           "mappings": [],
           "thresholds": {
+            "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
+              },
+              {
+                "color": "yellow",
+                "value": 10000
               },
               {
                 "color": "red",
-                "value": 80
+                "value": 50000
               }
             ]
           },
-          "unit": "bytes"
+          "unit": "short"
         },
         "overrides": []
       },
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 37
-      },
-      "id": 15,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "disk_capacity_bytes{job=~\"$job\"}",
-          "format": "time_series",
-          "legendFormat": "{{device}} ({{model}})",
-          "refId": "A"
-        }
-      ],
-      "title": "Disk Capacity",
-      "type": "timeseries"
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
         "x": 0,
         "y": 45
       },
-      "id": 16,
-      "panels": [],
-      "title": "RAID Battery Status",
-      "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "vis": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "mvolt"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 0,
-        "y": 46
-      },
-      "id": 17,
+      "id": 26,
       "options": {
         "legend": {
           "calcs": [],
@@ -1123,192 +973,28 @@
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.0.2",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "raid_battery_voltage_millivolts{job=~\"$job\"}",
+          "editorMode": "code",
+          "expr": "disk_power_cycles_total{job=~\"$job\", instance=\"$instance\"}",
           "format": "time_series",
-          "legendFormat": "Battery {{controller}}",
+          "legendFormat": "{{device}} ({{model}})",
+          "range": true,
           "refId": "A"
         }
       ],
-      "title": "RAID Battery Voltage",
+      "title": "Disk Power Cycles",
       "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "vis": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "celsius"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 46
-      },
-      "id": 18,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "raid_battery_temperature_celsius{job=~\"$job\"}",
-          "format": "time_series",
-          "legendFormat": "Battery {{controller}}",
-          "refId": "A"
-        }
-      ],
-      "title": "RAID Battery Temperature",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "color": "red",
-                  "index": 0,
-                  "text": "Bad"
-                },
-                "1": {
-                  "color": "green",
-                  "index": 1,
-                  "text": "Good"
-                }
-              },
-              "type": "value"
-            }
-          ],
-          "thresholds": {
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 46
-      },
-      "id": 19,
-      "options": {
-        "orientation": "auto",
-        "reduceOptions": {
-          "values": false,
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": ""
-        },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true
-      },
-      "pluginVersion": "10.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "raid_battery_status{job=~\"$job\"}",
-          "format": "time_series",
-          "legendFormat": "Battery {{controller}}",
-          "refId": "A"
-        }
-      ],
-      "title": "RAID Battery Status",
-      "type": "gauge"
     },
     {
       "collapsed": false,
@@ -1351,10 +1037,10 @@
             }
           ],
           "thresholds": {
+            "mode": "absolute",
             "steps": [
               {
-                "color": "red",
-                "value": null
+                "color": "red"
               },
               {
                 "color": "green",
@@ -1373,27 +1059,32 @@
       },
       "id": 21,
       "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
         "orientation": "auto",
         "reduceOptions": {
-          "values": false,
           "calcs": [
             "lastNotNull"
           ],
-          "fields": ""
+          "fields": "",
+          "values": false
         },
         "showThresholdLabels": false,
-        "showThresholdMarkers": true
+        "showThresholdMarkers": true,
+        "sizing": "auto"
       },
-      "pluginVersion": "10.0.0",
+      "pluginVersion": "12.0.2",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "disk_health_exporter_up{job=~\"$job\"}",
+          "editorMode": "code",
+          "expr": "disk_health_exporter_up{job=~\"$job\", instance=\"$instance\"}",
           "format": "time_series",
           "legendFormat": "Exporter Status",
+          "range": true,
           "refId": "A"
         }
       ],
@@ -1407,6 +1098,26 @@
       },
       "fieldConfig": {
         "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
           "unit": "bytes"
         },
         "overrides": []
@@ -1415,12 +1126,22 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 60
+        "y": 61
       },
       "id": 22,
       "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
         "showHeader": true
       },
+      "pluginVersion": "12.0.2",
       "targets": [
         {
           "datasource": {
@@ -1463,6 +1184,26 @@
       },
       "fieldConfig": {
         "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
           "unit": "percent"
         },
         "overrides": []
@@ -1471,12 +1212,22 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 68
+        "y": 69
       },
       "id": 23,
       "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
         "showHeader": true
       },
+      "pluginVersion": "12.0.2",
       "targets": [
         {
           "datasource": {
@@ -1499,6 +1250,26 @@
       },
       "fieldConfig": {
         "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
           "unit": "percent"
         },
         "overrides": []
@@ -1507,12 +1278,22 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 76
+        "y": 77
       },
       "id": 24,
       "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
         "showHeader": true
       },
+      "pluginVersion": "12.0.2",
       "targets": [
         {
           "datasource": {
@@ -1535,6 +1316,19 @@
       },
       "fieldConfig": {
         "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
           "unit": "boolean"
         },
         "overrides": []
@@ -1543,18 +1337,32 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 80
+        "y": 85
       },
       "id": 25,
       "options": {
         "legend": {
           "showLegend": true
         },
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto",
         "tooltip": {
           "mode": "single",
           "sort": "none"
         }
       },
+      "pluginVersion": "12.0.2",
       "targets": [
         {
           "datasource": {
@@ -1571,9 +1379,9 @@
       "type": "gauge"
     }
   ],
-  "refresh": "30s",
-  "schemaVersion": 38,
-  "style": "dark",
+  "preload": false,
+  "refresh": "1m",
+  "schemaVersion": 41,
   "tags": [
     "disk-health",
     "monitoring",
@@ -1586,7 +1394,7 @@
         "current": {
           "selected": false,
           "text": "Prometheus",
-          "value": "Prometheus"
+          "value": "prometheus"
         },
         "hide": 0,
         "includeAll": false,
@@ -1602,25 +1410,52 @@
         "type": "datasource"
       },
       {
+        "allowCustomValue": false,
         "current": {
-          "selected": false,
-          "text": "All",
-          "value": "$__all"
+          "text": "undermedia-disk-health-exporter",
+          "value": "undermedia-disk-health-exporter"
         },
-        "hide": 0,
-        "includeAll": true,
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "definition": "label_values(disk_health_status,job)",
+        "hide": 2,
+        "includeAll": false,
         "label": "Job",
-        "multi": true,
         "name": "job",
         "options": [],
         "query": {
-          "query": "label_values(disk_health_exporter_up, job)",
-          "refId": "StandardVariableQuery"
+          "qryType": 1,
+          "query": "label_values(disk_health_status,job)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
-        "regex": "",
-        "skipUrlSync": false,
+        "regex": "/undermedia.*/",
         "sort": 1,
+        "type": "query"
+      },
+      {
+        "allowCustomValue": false,
+        "current": {
+          "text": "cn09.undermedia.tv",
+          "value": "cn09.undermedia.tv"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "definition": "label_values(disk_available_bytes,instance)",
+        "label": "Instance",
+        "name": "instance",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(disk_available_bytes,instance)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "/cn.*/",
         "type": "query"
       }
     ]
@@ -1633,6 +1468,5 @@
   "timezone": "",
   "title": "Disk Health Monitoring",
   "uid": "disk-health-monitoring",
-  "version": 1,
-  "weekStart": ""
+  "version": 1
 }
