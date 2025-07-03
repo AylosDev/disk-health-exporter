@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **MegaCLI code refactoring for improved maintainability** - Significantly reduced code duplication in MegaCLI parsing logic (~185 lines reduced, 20% of the file)
+  - **Regex-based key-value parsing** - Replaced 22+ instances of manual string parsing with unified `parseKeyValue()` function using robust regex pattern matching
+  - **Centralized RAID role determination** - Created `determineRaidRole()` function to standardize health status to RAID role mapping across 3 different functions
+  - **Unified disk utilization setting** - Added `setDiskUtilization()` helper to eliminate repetitive disk property assignments in multiple finalization functions
+  - **Temperature parsing utility** - Extracted temperature parsing logic into reusable `parseTemperature()` function with consistent regex handling
+  - **Numeric value extraction** - Created `extractNumericValue()` utility for parsing values with units (mV, mA, C) used in battery and temperature parsing
+  - **Disk key generation utility** - Added `generateDiskKey()` helper for consistent unique disk identifier creation
+  - **Size string cleanup utility** - Created `cleanSizeString()` function to handle bracket removal from MegaCLI size output
+  - **Enhanced pattern matching** - Improved parsing robustness with regex patterns that handle optional whitespace and formatting variations
+  - **Code organization** - Grouped all utility functions at the end of the file for better code structure and reusability
+
 ### Deprecated
 
 ### Removed
