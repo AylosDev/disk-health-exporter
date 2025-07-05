@@ -1,6 +1,7 @@
 #!/bin/bash
-# VERSION 1.0
+# VERSION 1.1
 # Author: EdgardoAcosta
+# Last updated: 2025-07-04
 
 # Universal Installation script for Disk Health Exporter
 
@@ -14,6 +15,7 @@ BIN_DIR="/usr/local/bin"
 DOWNLOADED_BINARY=""
 SERVICE_PORT="9300"
 COLLECT_INTERVAL="120s"
+METRICS_PATH="/disk-metrics"
 FORCE_INSTALL=""
 SKIP_VERSION_CHECK=""
 DRY_RUN=""
@@ -302,7 +304,7 @@ After=network.target
 Type=simple
 User=root
 Group=root
-ExecStart=${BIN_DIR}/disk-health-exporter --port=${SERVICE_PORT} --collect-interval=${COLLECT_INTERVAL}
+ExecStart=${BIN_DIR}/disk-health-exporter --port=${SERVICE_PORT} --metrics-path=${METRICS_PATH} --collect-interval=${COLLECT_INTERVAL}
 Restart=always
 RestartSec=5
 StandardOutput=journal

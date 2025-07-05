@@ -51,13 +51,13 @@ The installer will warn about missing tools but will continue with the installat
 
 ```bash
 # Install latest version (binary only)
-curl -sSL https://raw.githubusercontent.com/AylosDev/disk-health-exporter/main/scripts/install.sh | bash
+curl -sSL -H "Cache-Control: no-cache" https://raw.githubusercontent.com/AylosDev/disk-health-exporter/main/scripts/install.sh | bash
 
 # Install with systemd/launchd service
-curl -sSL https://raw.githubusercontent.com/AylosDev/disk-health-exporter/main/scripts/install.sh | bash -s -- -s
+curl -sSL -H "Cache-Control: no-cache" https://raw.githubusercontent.com/AylosDev/disk-health-exporter/main/scripts/install.sh | bash -s -- -s
 
 # Install specific version
-curl -sSL https://raw.githubusercontent.com/AylosDev/disk-health-exporter/main/scripts/install.sh | bash -s -- -v v1.0.0
+curl -sSL -H "Cache-Control: no-cache" https://raw.githubusercontent.com/AylosDev/disk-health-exporter/main/scripts/install.sh | bash -s -- -v v1.0.0
 
 # Download and run locally for more control
 wget https://raw.githubusercontent.com/AylosDev/disk-health-exporter/main/scripts/install.sh
