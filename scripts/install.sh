@@ -93,26 +93,23 @@ parse_args() {
 
 # Detect operating system and architecture
 detect_os() {
-  case "$OSTYPE" in
-  linux*)
-    if [[ -f /etc/os-release ]]; then
-      . /etc/os-release
-      OS="linux"
-      DISTRO="$ID"
-      VER="$VERSION_ID"
-    else
-      OS="linux"
-      DISTRO="unknown"
-      VER="unknown"
-    fi
+  # Detect OS
+  case "$(uname -s)" in
+  Linux*)
+    OS="linux"
+    DISTRO="linux"
     ;;
-  darwin*)
+  Darwin*)
     OS="darwin"
-    DISTRO="macos"
-    VER=$(sw_vers -productVersion)
+    DISTRO="macOS"
+    ;;
+  CYGWIN* | MINGW* | MSYS*)
+    OS="windows"
+    DISTRO="windows"
     ;;
   *)
-    echo -e "${RED}Unsupported operating system: $OSTYPE${NC}"
+    echo -e "${RED}Unsupported operating system: $(uname -s)${NC}"
+    echo -e "${RED}Supported: Linux, macOS, Windows${NC}"
     exit 1
     ;;
   esac
@@ -127,11 +124,12 @@ detect_os() {
     ;;
   *)
     echo -e "${RED}Unsupported architecture: $(uname -m)${NC}"
+    echo -e "${RED}Supported: amd64, arm64${NC}"
     exit 1
     ;;
   esac
 
-  echo -e "${YELLOW}Detected: $DISTRO $VER ($OS-$ARCH)${NC}"
+  echo -e "${YELLOW}Detected: $DISTRO ($OS-$ARCH)${NC}"
 }
 
 # Download binary from GitHub releases
