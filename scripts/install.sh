@@ -13,6 +13,7 @@ INSTALL_SERVICE=""
 BIN_DIR="/usr/local/bin"
 DOWNLOADED_BINARY=""
 SERVICE_PORT="9300"
+COLLECT_INTERVAL="120s"
 FORCE_INSTALL=""
 SKIP_VERSION_CHECK=""
 DRY_RUN=""
@@ -246,10 +247,10 @@ check_linux_deps() {
   fi
 
   # Create exporter user if it doesn't exist (only for service)
-  if ! id -u exporter >/dev/null 2>&1; then
-    echo -e "${YELLOW}Creating exporter user...${NC}"
-    sudo useradd --system --no-create-home --shell /bin/false --user-group --comment "Disk Health Exporter Service User" exporter
-  fi
+  # if ! id -u exporter >/dev/null 2>&1; then
+  #   echo -e "${YELLOW}Creating exporter user...${NC}"
+  #   sudo useradd --system --no-create-home --shell /bin/false --user-group --comment "Disk Health Exporter Service User" exporter
+  # fi
 }
 
 # Check dependencies for macOS (warning only)
@@ -308,9 +309,9 @@ After=network.target
 
 [Service]
 Type=simple
-User=exporter
-Group=exporter
-ExecStart=${BIN_DIR}/disk-health-exporter --port=${SERVICE_PORT}
+User=root
+Group=root
+ExecStart=${BIN_DIR}/disk-health-exporter --port=${SERVICE_PORT} --collect-interval=${COLLECT_INTERVAL}
 Restart=always
 RestartSec=5
 StandardOutput=journal
