@@ -197,13 +197,6 @@ check_linux_deps() {
 
   echo -e "${YELLOW}Checking Linux dependencies for service setup...${NC}"
 
-  # Check if running as root
-  if [[ $EUID -eq 0 ]]; then
-    echo -e "${RED}This script should not be run as root${NC}"
-    echo "Please run as a regular user with sudo privileges"
-    exit 1
-  fi
-
   # Check for smartmontools
   if ! command -v smartctl &>/dev/null; then
     echo -e "${YELLOW}WARNING: smartmontools not found${NC}"
