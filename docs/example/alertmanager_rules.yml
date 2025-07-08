@@ -160,41 +160,22 @@ groups:
       description: "RAID {{ $labels.raid_level }} array {{ $labels.array_id }} has failed completely. Data loss possible."
 
   - alert: RaidRebuildInProgress
-    expr: raid_array_rebuild_progress > 0 and raid_array_rebuild_progress < 100
+    expr: raid_array_rebuild_progress_percentage > 0 and raid_array_rebuild_progress_percentage < 100
     for: 0m
     labels:
       severity: info
     annotations:
       summary: "RAID array {{ $labels.array_id }} rebuild in progress"
       description: "RAID array {{ $labels.array_id }} rebuild is {{ $value }}% complete."
-- name: raid_health_alerts
-  rules:
-  - alert: RaidArrayDegraded
-    expr: raid_array_status == 2
+
+  - alert: RaidArrayFailedDrives
+    expr: raid_array_failed_drives > 0
     for: 0m
     labels:
       severity: critical
     annotations:
-      summary: "RAID array {{ $labels.array_id }} is degraded"
-      description: "RAID {{ $labels.raid_level }} array {{ $labels.array_id }} is in degraded state. Check for failed drives."
-
-  - alert: RaidArrayFailed
-    expr: raid_array_status == 3
-    for: 0m
-    labels:
-      severity: critical
-    annotations:
-      summary: "RAID array {{ $labels.array_id }} has failed"
-      description: "RAID {{ $labels.raid_level }} array {{ $labels.array_id }} has failed completely. Data loss possible."
-
-  - alert: RaidRebuildInProgress
-    expr: raid_array_rebuild_progress > 0 and raid_array_rebuild_progress < 100
-    for: 0m
-    labels:
-      severity: info
-    annotations:
-      summary: "RAID array {{ $labels.array_id }} rebuild in progress"
-      description: "RAID array {{ $labels.array_id }} rebuild is {{ $value }}% complete."
+      summary: "RAID array {{ $labels.array_id }} has {{ $value }} failed drives"
+      description: "RAID {{ $labels.raid_level }} array {{ $labels.array_id }} has {{ $value }} failed drives. Check array status immediately."
 - name: raid_battery_alerts
   rules:
   - alert: RaidBatteryMissing
@@ -268,3 +249,78 @@ groups:
     annotations:
       summary: "RAID controller {{ $labels.adapter_id }} battery learn cycle active"
       description: "RAID controller {{ $labels.adapter_id }} battery ({{ $labels.battery_type }}) learn cycle is active. Battery calibration in progress."
+- name: disk_media_errors
+  rules:
+  - alert: DiskMediaErrors
+    expr: disk_media_errors_total > 0
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Media errors detected on {{ $labels.device }}"
+      description: "Disk {{ $labels.device }} has {{ $value }} media errors. Monitor for increasing trend."
+
+  - alert: DiskErrorLogEntries
+    expr: disk_error_log_entries_total > 10
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High number of error log entries on {{ $labels.device }}"
+      description: "Disk {{ $labels.device }} has {{ $value }} error log entries. Check drive health."
+
+  - alert: SSDWearLevelingHigh
+    expr: disk_wear_leveling_percentage > 90
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "SSD {{ $labels.device }} wear leveling is {{ $value }}%"
+      description: "SSD {{ $labels.device }} wear leveling is at {{ $value }}%. Monitor for approaching end of life."
+- name: software_raid_alerts
+  rules:
+  - alert: SoftwareRaidArrayDegraded
+    expr: software_raid_array_status == 2
+    for: 0m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Software RAID array {{ $labels.device }} is degraded"
+      description: "Software RAID {{ $labels.level }} array {{ $labels.device }} is in degraded state: {{ $labels.state }}. Check for failed drives."
+
+  - alert: SoftwareRaidArrayFailed
+    expr: software_raid_array_status == 3
+    for: 0m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Software RAID array {{ $labels.device }} has failed"
+      description: "Software RAID {{ $labels.level }} array {{ $labels.device }} has failed completely. Data loss possible."
+
+  - alert: SoftwareRaidSyncInProgress
+    expr: software_raid_sync_progress_percentage > 0 and software_raid_sync_progress_percentage < 100
+    for: 0m
+    labels:
+      severity: info
+    annotations:
+      summary: "Software RAID array {{ $labels.device }} sync in progress"
+      description: "Software RAID array {{ $labels.device }} {{ $labels.sync_action }} is {{ $value }}% complete."
+- name: system_overview_alerts
+  rules:
+  - alert: DiskHealthExporterDown
+    expr: disk_health_exporter_up == 0
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Disk Health Exporter is down"
+      description: "The disk health exporter has been down for more than 5 minutes. Check the service status."
+
+  - alert: MonitoringToolsUnavailable
+    expr: system_monitoring_tools_available == 0
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Monitoring tool {{ $labels.tool }} is unavailable"
+      description: "Monitoring tool {{ $labels.tool }} (version {{ $labels.version }}) is not available. Some metrics may not be collected."

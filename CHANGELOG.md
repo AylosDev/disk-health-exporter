@@ -11,6 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [0.0.14] - 2025-07-08
+
+### Added
+
+- **Comprehensive alerting rules expansion** - Enhanced Alertmanager rules with additional monitoring capabilities
+  - **Disk media error alerts** - Added monitoring for disk media errors and error log entries to detect drive degradation early
+  - **SSD wear leveling monitoring** - Added alert for high SSD wear leveling percentage (>90%) to monitor SSD end-of-life
+  - **Software RAID monitoring** - Added comprehensive alerting for Linux software RAID arrays including degraded/failed states and sync progress
+  - **System overview alerts** - Added monitoring for disk health exporter availability and monitoring tool status
+  - **Enhanced RAID alerting** - Added alert for tracking failed drives count in RAID arrays
+
+### Changed
+
 - **MegaCLI code refactoring for improved maintainability** - Significantly reduced code duplication in MegaCLI parsing logic (~185 lines reduced, 20% of the file)
   - **Regex-based key-value parsing** - Replaced 22+ instances of manual string parsing with unified `parseKeyValue()` function using robust regex pattern matching
   - **Centralized RAID role determination** - Created `determineRaidRole()` function to standardize health status to RAID role mapping across 3 different functions
@@ -22,13 +43,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Enhanced pattern matching** - Improved parsing robustness with regex patterns that handle optional whitespace and formatting variations
   - **Code organization** - Grouped all utility functions at the end of the file for better code structure and reusability
 
-### Deprecated
-
-### Removed
-
 ### Fixed
 
-### Security
+- **Enhanced health status parsing** - Improved disk health status detection for unconfigured drives
+  - **UNCONFIGURED drive support** - Added support for "UNCONFIGURED(GOOD)" as healthy status and "UNCONFIGURED(BAD)" as critical status
+  - **More accurate drive classification** - Better handling of drives that are present but not configured in RAID arrays
+  - **Consistent status mapping** - Unified health status parsing across different RAID controller outputs
+
+- **Alertmanager rules corrections** - Fixed metric names and improved alert reliability
+  - **RAID rebuild progress metric** - Fixed metric name from `raid_array_rebuild_progress` to `raid_array_rebuild_progress_percentage`
+  - **Software RAID progress metric** - Fixed metric name to `software_raid_sync_progress_percentage` for consistency
+  - **Removed duplicate alert groups** - Cleaned up duplicated RAID health alert definitions
 
 ## [0.0.13] - 2025-07-03
 
