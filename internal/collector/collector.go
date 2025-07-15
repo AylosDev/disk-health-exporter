@@ -1,6 +1,9 @@
+// Package collector provides metrics collection functionality for disk health monitoring.
+// It handles periodic collection of disk health metrics from various sources.
 package collector
 
 import (
+	"context"
 	"log"
 	"runtime"
 	"time"
@@ -12,14 +15,14 @@ import (
 	"disk-health-exporter/pkg/types"
 )
 
-// Collector handles metric collection
+// Collector handles metric collection from disk health monitoring tools.
 type Collector struct {
 	metrics     *metrics.Metrics
 	diskManager *disk.Manager
 	interval    time.Duration
 }
 
-// New creates a new collector
+// New creates a new collector with the specified metrics and collection interval.
 func New(m *metrics.Metrics, interval time.Duration) *Collector {
 	return &Collector{
 		metrics:     m,
@@ -28,7 +31,7 @@ func New(m *metrics.Metrics, interval time.Duration) *Collector {
 	}
 }
 
-// NewWithConfig creates a new collector with configuration
+// NewWithConfig creates a new collector with configuration-based disk filtering.
 func NewWithConfig(m *metrics.Metrics, interval time.Duration, cfg *config.Config) *Collector {
 	return &Collector{
 		metrics:     m,
@@ -37,8 +40,11 @@ func NewWithConfig(m *metrics.Metrics, interval time.Duration, cfg *config.Confi
 	}
 }
 
-// Start begins the metric collection loop
-func (c *Collector) Start() {
+// Start begins the metric collection loop. This method blocks and should
+// typically be run in a goroutine. It collects metrics immediately on startup
+// and then at regular intervals defined by the collector's interval.
+// It respects context cancellation for graceful shutdown.
+func (c *Collector) Start(ctx context.Context) {
 	// Set exporter as up
 	c.metrics.ExporterUp.Set(1)
 
@@ -49,8 +55,15 @@ func (c *Collector) Start() {
 	ticker := time.NewTicker(c.interval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		c.updateMetrics()
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("Collector stopping due to context cancellation")
+			c.metrics.ExporterUp.Set(0)
+			return
+		case <-ticker.C:
+			c.updateMetrics()
+		}
 	}
 }
 
@@ -75,8 +88,8 @@ func (c *Collector) updateMetrics() {
 	}
 }
 
-// updateToolMetrics updates metrics about available tools
-// boolToFloat converts boolean to float64 for metrics
+// boolToFloat converts a boolean value to a float64 for use in metrics.
+// Returns 1.0 for true, 0.0 for false.
 func boolToFloat(b bool) float64 {
 	if b {
 		return 1.0

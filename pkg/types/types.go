@@ -1,3 +1,6 @@
+// Package types defines common data structures and constants used throughout
+// the disk health exporter for representing disk information, health status,
+// and RAID configurations.
 package types
 
 // HealthStatus represents disk health status values

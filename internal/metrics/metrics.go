@@ -1,10 +1,14 @@
+// Package metrics provides Prometheus metrics definitions and management
+// for the disk health exporter.
 package metrics
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// Metrics holds all Prometheus metrics
+// Metrics holds all Prometheus metrics used by the disk health exporter.
+// It contains gauges for various disk health indicators, RAID status,
+// and tool availability metrics.
 type Metrics struct {
 	// Existing metrics
 	DiskHealthStatus *prometheus.GaugeVec

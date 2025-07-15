@@ -19,6 +19,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+## [0.0.15] - 2025-07-15
+
+### Added
+
+- **Context-aware graceful shutdown** - Enhanced collector with proper context support for clean application termination
+  - **Context cancellation support** - Collector now respects context cancellation for immediate shutdown when SIGINT/SIGTERM is received
+  - **Exporter status tracking** - Properly sets `exporter_up` metric to 0 during shutdown process
+  - **Clean resource cleanup** - Ticker and goroutines are properly cleaned up on context cancellation
+
+### Changed
+
+- **Go best practices implementation** - Comprehensive code refactoring to follow idiomatic Go patterns and community standards
+  - **Package documentation** - Added proper package-level documentation following Go conventions for all packages (main, collector, config, types, utils)
+  - **Function documentation** - All exported functions and types now have comprehensive documentation starting with the symbol name
+  - **Error handling improvements** - Enhanced error handling with proper context propagation and structured error messages
+  - **HTTP handler enhancements** - Improved HTTP handlers with proper method validation, content-type headers, and error responses
+  - **Input validation** - Added comprehensive input validation for configuration parameters with meaningful error messages
+  - **Code organization** - Better separation of concerns with helper functions and utility methods
+  - **Memory management** - Improved resource management with proper use of defer statements and cleanup patterns
+
+- **Enhanced HTTP server implementation** - Production-ready HTTP server with proper lifecycle management
+  - **Server timeouts** - Added ReadTimeout (10s), WriteTimeout (10s), and IdleTimeout (60s) for better resource management
+  - **Graceful shutdown** - HTTP server now supports graceful shutdown with 30-second timeout for ongoing requests
+  - **Proper error handling** - Enhanced error responses with appropriate HTTP status codes and content types
+  - **Method validation** - All endpoints now validate HTTP methods and return 405 Method Not Allowed for unsupported methods
+  - **Content-Type headers** - Proper content-type headers for HTML and JSON responses with charset specification
+
+- **Build system compatibility** - Maintained compatibility with existing Makefile while improving code structure
+  - **Global build variables** - Preserved global variables (version, commit, buildTime, buildBy) for linker flag compatibility
+  - **Helper functions** - Added `getBuildInfo()` helper for clean version information formatting
+  - **Build verification** - Ensured all `-X main.variable=value` linker flags continue to work correctly
+
+### Fixed
+
+- **Collector lifecycle management** - Fixed potential goroutine leaks and improved shutdown behavior
+  - **Graceful termination** - Collector now properly terminates when context is cancelled instead of running indefinitely
+  - **Resource cleanup** - Fixed ticker cleanup and prevented goroutine leaks during application shutdown
+  - **Signal handling** - Improved signal handling with proper context propagation to all components
+
+- **Configuration validation** - Enhanced configuration parsing with proper error handling
+  - **Duration parsing** - Improved duration parsing with better error messages and fallback handling
+  - **Port validation** - Added validation for port numbers and other configuration parameters
+  - **Environment variable handling** - Better handling of environment variables with proper type conversion
+
+### Security
+
+- **Input sanitization** - Enhanced input validation to prevent potential security issues
+  - **Configuration validation** - All configuration inputs are now properly validated and sanitized
+  - **HTTP request validation** - Enhanced validation of HTTP requests with proper method and content-type checking
+  - **Error message sanitization** - Error messages no longer expose internal system details
+
 ## [0.0.14] - 2025-07-08
 
 ### Added

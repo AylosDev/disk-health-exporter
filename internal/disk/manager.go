@@ -1,3 +1,5 @@
+// Package disk provides disk detection and management functionality
+// across different operating systems.
 package disk
 
 import (

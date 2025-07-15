@@ -1,3 +1,5 @@
+// Package config provides configuration management for the disk health exporter.
+// It supports configuration through command-line flags and environment variables.
 package config
 
 import (
@@ -5,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -19,7 +22,7 @@ type Config struct {
 	IgnorePatterns  []string // Internal use: patterns to ignore (loop devices, etc.)
 }
 
-// New creates a new configuration from command-line flags
+// New creates a new configuration from command-line flags and validates it.
 func New(version string) *Config {
 	var (
 		port            = flag.String("port", getEnv("PORT", "9100"), "Port to listen on")
@@ -49,7 +52,7 @@ func New(version string) *Config {
 		"/dev/dm-",  // Device mapper (handled by underlying devices)
 	}
 
-	return &Config{
+	cfg := &Config{
 		Version:         version,
 		Port:            *port,
 		MetricsPath:     *metricsPath,
@@ -58,9 +61,17 @@ func New(version string) *Config {
 		TargetDisks:     *targetDisks,
 		IgnorePatterns:  ignorePatterns,
 	}
+
+	// Validate configuration
+	if err := cfg.Validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "Configuration error: %v\n", err)
+		os.Exit(1)
+	}
+
+	return cfg
 }
 
-// PrintUsage prints usage information
+// PrintUsage prints usage information to stdout.
 func PrintUsage() {
 	fmt.Printf("Disk Health Prometheus Exporter\n\n")
 	fmt.Printf("Usage: %s [options]\n\n", os.Args[0])
@@ -78,7 +89,7 @@ func PrintUsage() {
 	fmt.Printf("  %s -target-disks '/dev/sda,/dev/nvme0n1'\n", os.Args[0])
 }
 
-// PrintVersion prints version information
+// PrintVersion prints version information to stdout.
 func PrintVersion(version string) {
 	fmt.Printf("Disk Health Prometheus Exporter\n")
 	fmt.Print(version)
@@ -92,16 +103,68 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
-// getEnvDuration gets a duration environment variable with a default value
+// getEnvDuration gets a duration environment variable with a default value.
+// It first tries to parse as a duration string (e.g., "30s", "5m"),
+// then falls back to parsing as seconds if that fails.
 func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
-	if value := os.Getenv(key); value != "" {
-		if duration, err := time.ParseDuration(value); err == nil {
-			return duration
-		}
-		// Try parsing as seconds
-		if seconds, err := strconv.Atoi(value); err == nil {
-			return time.Duration(seconds) * time.Second
-		}
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
 	}
+
+	// Try parsing as duration first
+	if duration, err := time.ParseDuration(value); err == nil {
+		return duration
+	}
+
+	// Try parsing as seconds
+	if seconds, err := strconv.Atoi(value); err == nil {
+		return time.Duration(seconds) * time.Second
+	}
+
+	// If all parsing fails, return default
 	return defaultValue
+}
+
+// Validate validates the configuration values and returns an error if any are invalid.
+func (c *Config) Validate() error {
+	if c.Port == "" {
+		return fmt.Errorf("port cannot be empty")
+	}
+
+	// Validate port is numeric and in valid range
+	if port, err := strconv.Atoi(c.Port); err != nil {
+		return fmt.Errorf("port must be a valid number: %w", err)
+	} else if port < 1 || port > 65535 {
+		return fmt.Errorf("port must be between 1 and 65535, got %d", port)
+	}
+
+	if c.MetricsPath == "" {
+		return fmt.Errorf("metrics path cannot be empty")
+	}
+
+	if !strings.HasPrefix(c.MetricsPath, "/") {
+		return fmt.Errorf("metrics path must start with '/', got %s", c.MetricsPath)
+	}
+
+	if c.CollectInterval <= 0 {
+		return fmt.Errorf("collect interval must be positive, got %v", c.CollectInterval)
+	}
+
+	if c.CollectInterval < time.Second {
+		return fmt.Errorf("collect interval must be at least 1 second, got %v", c.CollectInterval)
+	}
+
+	validLogLevels := map[string]bool{
+		"debug": true,
+		"info":  true,
+		"warn":  true,
+		"error": true,
+	}
+
+	if !validLogLevels[strings.ToLower(c.LogLevel)] {
+		return fmt.Errorf("invalid log level %s, must be one of: debug, info, warn, error", c.LogLevel)
+	}
+
+	return nil
 }

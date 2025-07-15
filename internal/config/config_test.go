@@ -3,11 +3,14 @@ package config
 import (
 	"flag"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
 
 func TestConfigFromFlags(t *testing.T) {
+	t.Helper()
+
 	// Reset flag.CommandLine for testing
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
@@ -16,37 +19,49 @@ func TestConfigFromFlags(t *testing.T) {
 
 	config := New("test-version")
 
-	if config.Port != "8080" {
-		t.Errorf("Expected port 8080, got %s", config.Port)
+	tests := []struct {
+		name     string
+		got      interface{}
+		expected interface{}
+	}{
+		{"port", config.Port, "8080"},
+		{"metrics path", config.MetricsPath, "/test-metrics"},
+		{"collect interval", config.CollectInterval, 45 * time.Second},
+		{"log level", config.LogLevel, "debug"},
 	}
 
-	if config.MetricsPath != "/test-metrics" {
-		t.Errorf("Expected metrics path /test-metrics, got %s", config.MetricsPath)
-	}
-
-	if config.CollectInterval != 45*time.Second {
-		t.Errorf("Expected collect interval 45s, got %v", config.CollectInterval)
-	}
-
-	if config.LogLevel != "debug" {
-		t.Errorf("Expected log level debug, got %s", config.LogLevel)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.got != tt.expected {
+				t.Errorf("Expected %v, got %v", tt.expected, tt.got)
+			}
+		})
 	}
 }
 
 func TestConfigFromEnvironmentFallback(t *testing.T) {
+	t.Helper()
+
 	// Reset flag.CommandLine for testing
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
 	// Clear any existing environment variables and set test ones
-	os.Unsetenv("PORT")
-	os.Unsetenv("METRICS_PATH")
-	os.Unsetenv("COLLECT_INTERVAL")
-	os.Unsetenv("LOG_LEVEL")
+	envVars := []string{"PORT", "METRICS_PATH", "COLLECT_INTERVAL", "LOG_LEVEL"}
+	for _, env := range envVars {
+		os.Unsetenv(env)
+	}
 
 	os.Setenv("PORT", "7070")
 	os.Setenv("METRICS_PATH", "/env-metrics")
 	os.Setenv("COLLECT_INTERVAL", "90s")
 	os.Setenv("LOG_LEVEL", "warn")
+
+	// Cleanup after test
+	defer func() {
+		for _, env := range envVars {
+			os.Unsetenv(env)
+		}
+	}()
 
 	defer func() {
 		// Clean up environment variables
@@ -168,6 +183,136 @@ func TestGetEnvDuration(t *testing.T) {
 			result := getEnvDuration("TEST_DURATION", 30*time.Second)
 			if result != tc.expected {
 				t.Errorf("Expected %v, got %v for input '%s'", tc.expected, result, tc.envValue)
+			}
+		})
+	}
+}
+
+func TestConfigValidation(t *testing.T) {
+	t.Helper()
+
+	tests := []struct {
+		name        string
+		config      Config
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "valid config",
+			config: Config{
+				Port:            "9100",
+				MetricsPath:     "/metrics",
+				CollectInterval: 30 * time.Second,
+				LogLevel:        "info",
+			},
+			expectError: false,
+		},
+		{
+			name: "empty port",
+			config: Config{
+				Port:            "",
+				MetricsPath:     "/metrics",
+				CollectInterval: 30 * time.Second,
+				LogLevel:        "info",
+			},
+			expectError: true,
+			errorMsg:    "port cannot be empty",
+		},
+		{
+			name: "invalid port - non-numeric",
+			config: Config{
+				Port:            "abc",
+				MetricsPath:     "/metrics",
+				CollectInterval: 30 * time.Second,
+				LogLevel:        "info",
+			},
+			expectError: true,
+			errorMsg:    "port must be a valid number",
+		},
+		{
+			name: "invalid port - out of range",
+			config: Config{
+				Port:            "99999",
+				MetricsPath:     "/metrics",
+				CollectInterval: 30 * time.Second,
+				LogLevel:        "info",
+			},
+			expectError: true,
+			errorMsg:    "port must be between 1 and 65535",
+		},
+		{
+			name: "empty metrics path",
+			config: Config{
+				Port:            "9100",
+				MetricsPath:     "",
+				CollectInterval: 30 * time.Second,
+				LogLevel:        "info",
+			},
+			expectError: true,
+			errorMsg:    "metrics path cannot be empty",
+		},
+		{
+			name: "metrics path without leading slash",
+			config: Config{
+				Port:            "9100",
+				MetricsPath:     "metrics",
+				CollectInterval: 30 * time.Second,
+				LogLevel:        "info",
+			},
+			expectError: true,
+			errorMsg:    "metrics path must start with '/'",
+		},
+		{
+			name: "zero collect interval",
+			config: Config{
+				Port:            "9100",
+				MetricsPath:     "/metrics",
+				CollectInterval: 0,
+				LogLevel:        "info",
+			},
+			expectError: true,
+			errorMsg:    "collect interval must be positive",
+		},
+		{
+			name: "collect interval too small",
+			config: Config{
+				Port:            "9100",
+				MetricsPath:     "/metrics",
+				CollectInterval: 500 * time.Millisecond,
+				LogLevel:        "info",
+			},
+			expectError: true,
+			errorMsg:    "collect interval must be at least 1 second",
+		},
+		{
+			name: "invalid log level",
+			config: Config{
+				Port:            "9100",
+				MetricsPath:     "/metrics",
+				CollectInterval: 30 * time.Second,
+				LogLevel:        "invalid",
+			},
+			expectError: true,
+			errorMsg:    "invalid log level",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error but got none")
+					return
+				}
+				if !strings.Contains(err.Error(), tt.errorMsg) {
+					t.Errorf("Expected error message to contain %q, got %q", tt.errorMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected no error but got: %v", err)
+				}
 			}
 		})
 	}
